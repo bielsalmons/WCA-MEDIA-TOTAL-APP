@@ -3,7 +3,7 @@ import requests
 import streamlit as st
 
 # Configuración de página y título
-st.title("🧩 Calculadora de Media WCA (3x3x3)")
+st.title("🧩 Estadísticas WCA (3x3x3)")
 st.write(
     "Introduce un WCA ID para obtener todas las solves oficiales y su media."
 )
