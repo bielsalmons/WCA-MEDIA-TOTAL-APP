@@ -98,7 +98,7 @@ else:
         else:
             tiene_comp2 = True
 
-    tab1, tab2 = st.tabs(["📊 Evolución de Medias", "⏱️ Solves Sub-X"])
+    tab1, tab2 = st.tabs(["📊 Evolución de Medias", "⏱️ Tasa sub-X"])
 
     # ==================== PESTAÑA 1 ====================
     with tab1:
@@ -173,7 +173,7 @@ else:
             "Introduce un tiempo límite en segundos (ej. 10.0 para Sub-10):",
             min_value=0.0,
             max_value=100.0,
-            value=7.0,
+            value=10.0,
             step=0.5,
         )
 
