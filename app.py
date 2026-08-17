@@ -135,7 +135,7 @@ else:
         else:
             tiene_comp2 = True
 
-    tab1, tab2, tab3 = st.tabs(["📊 Evolución de Medias", "⏱️ Tasa Sub-X", "⚡ Últimas N Solves (AoN)"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Evolución de Medias", "⏱️ Tasa Sub-X", "⚡ Últimas N Solves (AoN)", "Variabilidad"])
 
     # ==================== PESTAÑA 1 ====================
     with tab1:
@@ -557,4 +557,103 @@ else:
         st.caption(
             f"ℹ️ **Nota:** se calcula la media de las "
             f"últimas {tamano_n} soluciones válidas (no DNF no DNS)."
+        )
+        # ==================== PESTAÑA DE VARIABILIDAD ====================
+    with tab4:
+
+        def calcular_variabilidad_anual(df):
+            if df.empty:
+                return pd.DataFrame()
+            
+            df_temp = df.copy()
+            
+            # Agrupamos por año y calculamos media, desviación estándar y varianza
+            resumen = df_temp.groupby("año")["solves segundos"].agg(
+                media="mean",
+                desviacion="std",
+                varianza="var",
+                solves_totales="count"
+            )
+            
+            # Coeficiente de variación: (Desviación / Media) * 100
+            resumen["cv_porcentaje"] = (resumen["desviacion"] / resumen["media"]) * 100
+            return resumen
+
+        var_1 = calcular_variabilidad_anual(df_comp1)
+
+        # --- GRÁFICO DE EVOLUCIÓN ---
+        st.write("### 📈 Evolución del Coeficiente de Variación (%)")
+        st.caption("Un porcentaje más bajo indica mayor consistencia en los tiempos.")
+        
+        df_grafico_var = pd.DataFrame({f"{wca_id_1}": var_1["cv_porcentaje"]})
+
+        if tiene_comp2:
+            var_2 = calcular_variabilidad_anual(df_comp2)
+            df_grafico_var[f"{wca_id_2}"] = var_2["cv_porcentaje"]
+
+        df_grafico_var_ordenado = df_grafico_var.sort_index(ascending=True)
+        df_grafico_var_ordenado.index = df_grafico_var_ordenado.index.astype(str)
+
+        if tiene_comp2:
+            mostrar_grafico_lineas(
+                df_grafico_var_ordenado, titulo_eje_y="Coef. Variación (%)"
+            )
+        else:
+            st.line_chart(df_grafico_var_ordenado)
+
+        # --- TABLAS DE RESUMEN ---
+        st.write("### 📋 Tabla de Variabilidad por Año")
+
+        if not tiene_comp2:
+            var_1_desc = var_1.sort_index(ascending=False).copy()
+            var_1_desc.index = var_1_desc.index.astype(str)
+            tabla_final_var = var_1_desc.reset_index()
+
+            tabla_final_var = tabla_final_var.rename(
+                columns={
+                    "año": "Año",
+                    "media": "Media (s)",
+                    "desviacion": "Desv. Estándar (s)",
+                    "varianza": "Varianza (s²)",
+                    "cv_porcentaje": "Coef. Variación (%)",
+                    "solves_totales": "Solves Totales",
+                }
+            )
+
+            # Formato de decimales
+            tabla_final_var["Media (s)"] = tabla_final_var["Media (s)"].apply(lambda x: f"{x:.2f}")
+            tabla_final_var["Desv. Estándar (s)"] = tabla_final_var["Desv. Estándar (s)"].apply(lambda x: f"{x:.2f}")
+            tabla_final_var["Varianza (s²)"] = tabla_final_var["Varianza (s²)"].apply(lambda x: f"{x:.2f}")
+            tabla_final_var["Coef. Variación (%)"] = tabla_final_var["Coef. Variación (%)"].apply(lambda x: f"{x:.2f}%")
+
+            st.dataframe(tabla_final_var, hide_index=True, use_container_width=True)
+
+        else:
+            col_cv1 = f"CV % ({wca_id_1})"
+            col_std1 = f"Desv (s) ({wca_id_1})"
+            col_cv2 = f"CV % ({wca_id_2})"
+            col_std2 = f"Desv (s) ({wca_id_2})"
+
+            tabla_comp_var = pd.DataFrame({
+                col_cv1: var_1["cv_porcentaje"],
+                col_std1: var_1["desviacion"],
+                col_cv2: var_2["cv_porcentaje"],
+                col_std2: var_2["desviacion"],
+            })
+
+            tabla_comp_var = tabla_comp_var.sort_index(ascending=False).reset_index()
+            tabla_comp_var = tabla_comp_var.rename(columns={"año": "Año"})
+            tabla_comp_var["Año"] = tabla_comp_var["Año"].astype(str)
+
+            tabla_comp_var[col_std1] = tabla_comp_var[col_std1].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "-")
+            tabla_comp_var[col_std2] = tabla_comp_var[col_std2].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "-")
+            tabla_comp_var[col_cv1] = tabla_comp_var[col_cv1].apply(lambda x: f"{x:.2f}%" if pd.notnull(x) else "-")
+            tabla_comp_var[col_cv2] = tabla_comp_var[col_cv2].apply(lambda x: f"{x:.2f}%" if pd.notnull(x) else "-")
+
+            st.dataframe(tabla_comp_var, hide_index=True, use_container_width=True)
+
+        st.markdown("---")
+        st.caption(
+            "ℹ️ **Nota:** El **Coeficiente de Variación (CV)** expresa la desviación estándar como porcentaje de la media. "
+            "Permite comparar la consistencia entre competidores."
         )
