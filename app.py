@@ -8,9 +8,9 @@ st.set_page_config(
     page_title="Estadísticas WCA 3x3x3", page_icon="🧩", layout="wide"
 )
 
-st.title("🧩 Estadísticas Oficiales de 3x3x3 WCA")
+st.title("🧩 Estadísticas Oficiales de 3x3x3")
 
-# ==================== CONTROLES PRINCIPALES (ENTRADAS EN PANTALLA) ====================
+# ==================== CONTROLES PRINCIPALES ====================
 col_wca1, col_wca2 = st.columns(2)
 
 with col_wca1:
@@ -41,24 +41,27 @@ def obtener_solves_wca(wca_id_input):
     results = datos.get("results", {})
     solves = []
 
+    # Iteramos la estructura tal como viene en el JSON (las competiciones y rondas más recientes están primero)
     for comp, event in results.items():
         if "333" in event:
             rondas = event["333"]
             match_año = re.search(r"\d{4}$", comp)
-            if not match_año:
-                continue
-            año = int(match_año.group())
+            año = int(match_año.group()) if match_año else 0
 
             for ronda in rondas:
                 nombre_ronda = ronda.get("round", "Desconocida")
                 solves_ronda = ronda.get("solves", [])
-                for tiempo in solves_ronda:
+                
+                # Invertimos las solves de la ronda ([::-1]) para que la 5.ª solve (la última hecha) sea la primera
+                for i, tiempo in enumerate(reversed(solves_ronda)):
                     if tiempo > 0:
+                        num_solve_orig = len(solves_ronda) - i  # Identificador de la solve original (1 a 5)
                         solves.append(
                             {
                                 "competición": comp,
                                 "año": año,
                                 "ronda": nombre_ronda,
+                                "num_solve": f"Solve #{num_solve_orig}",
                                 "solves segundos": tiempo / 100.0,
                             }
                         )
@@ -66,6 +69,7 @@ def obtener_solves_wca(wca_id_input):
     if not solves:
         return pd.DataFrame()
 
+    # El DataFrame ahora tiene la última solve de la última ronda al principio (index 0 = la más reciente)
     return pd.DataFrame(solves)
 
 
@@ -131,7 +135,7 @@ else:
         else:
             tiene_comp2 = True
 
-    tab1, tab2 = st.tabs(["📊 Evolución de Medias", "⏱️ Tasa Sub-X"])
+    tab1, tab2, tab3 = st.tabs(["📊 Evolución de Medias", "⏱️ Tasa Sub-X", "⚡ Últimas N Solves (AoN)"])
 
     # ==================== PESTAÑA 1 ====================
     with tab1:
@@ -211,7 +215,6 @@ else:
             tabla_comp_medias = tabla_comp_medias.sort_index(ascending=False)
             tabla_comp_medias.index = tabla_comp_medias.index.astype(str)
 
-            # Calcular fila de Total General
             total_s1 = len(df_comp1)
             media_g1 = df_comp1["solves segundos"].mean()
             total_s2 = len(df_comp2)
@@ -230,7 +233,6 @@ else:
             tabla_completa = pd.concat([tabla_comp_medias, fila_total]).reset_index()
             tabla_completa = tabla_completa.rename(columns={"index": "Año"})
 
-            # Formatear números
             cols_solves = [col_s1, col_s2]
             tabla_completa[cols_solves] = tabla_completa[cols_solves].fillna(0).astype(int)
 
@@ -247,14 +249,11 @@ else:
 
         st.markdown("---")
         st.caption(
-            "ℹ️ **Nota:** Se calcula la media de todas las soluciones oficiales de 3x3 "
-            "(excluyendo DNF y DNS) por año (incluye las soluciones de las finales head-to-head)."
+            "ℹ️ **Nota:** Se calcula la media de todas las soluciones oficiales (excluyendo DNF's Y DNS's) de 3x3 por año."
         )
 
     # ==================== PESTAÑA 2 ====================
     with tab2:
-        st.write("### ⏱️ Tasa de Solves Sub-X por Año")
-
         limite_tiempo = st.number_input(
             "Introduce un tiempo límite en segundos (ej. 10.0 para Sub-10):",
             min_value=0.0,
@@ -262,6 +261,8 @@ else:
             value=10.0,
             step=0.5,
         )
+
+        st.write(f"### ⏱️ Tasa de Solves Sub-{limite_tiempo:.2f} por Año")
 
         def obtener_tasa_sub_x(df, limite):
             df_temp = df.copy()
@@ -276,8 +277,7 @@ else:
 
         tasa_1 = obtener_tasa_sub_x(df_comp1, limite_tiempo)
 
-        # 1. Gráfico
-        st.write("### 📈 Evolución de la Tasa Sub-X (%)")
+        st.write(f"### 📈 Evolución de la Tasa Sub-{limite_tiempo:.2f} (%)")
         df_grafico_tasa = pd.DataFrame({f"{wca_id_1}": tasa_1["porcentaje"]})
 
         if tiene_comp2:
@@ -294,7 +294,6 @@ else:
         else:
             st.line_chart(df_grafico_tasa_ordenado)
 
-        # 2. Resumen en métricas
         st.write("### 🎯 Totales Históricos")
         sub_1 = (df_comp1["solves segundos"] < limite_tiempo).sum()
         total_1 = len(df_comp1)
@@ -322,8 +321,7 @@ else:
                 f"de **{total_1}** totales (**{pct_1:.2f}%**)."
             )
 
-        # 3. Tabla con resaltado de columnas
-        st.write("### 📋 Tabla de Tasa Sub-X por Año")
+        st.write(f"### 📋 Tabla de Tasa Sub-{limite_tiempo:.2f} por Año")
 
         if not tiene_comp2:
             fila_total = pd.DataFrame(
@@ -383,7 +381,6 @@ else:
             tabla_comp_tasa = tabla_comp_tasa.sort_index(ascending=False)
             tabla_comp_tasa.index = tabla_comp_tasa.index.astype(str)
 
-            # Fila de Total Histórico en la comparación
             fila_total_tasa = pd.DataFrame(
                 {
                     col_sub1: [sub_1],
@@ -404,7 +401,6 @@ else:
                 tabla_comp_tasa_completa[cols_enteras].fillna(0).astype(int)
             )
 
-            # Formatear porcentajes
             tabla_comp_tasa_completa[col_tasa1] = tabla_comp_tasa_completa[col_tasa1].apply(
                 lambda x: f"{x:.2f}%" if pd.notnull(x) else "-"
             )
@@ -424,7 +420,6 @@ else:
                 tabla_estilizada, hide_index=True, use_container_width=True
             )
 
-        # 4. Desplegables con detalle
         solves_sub1 = df_comp1[df_comp1["solves segundos"] < limite_tiempo]
         if len(solves_sub1) > 0:
             with st.expander(
@@ -432,7 +427,7 @@ else:
             ):
                 st.dataframe(
                     solves_sub1[
-                        ["competición", "año", "ronda", "solves segundos"]
+                        ["competición", "ronda", "solves segundos"]
                     ],
                     hide_index=True,
                     use_container_width=True,
@@ -446,7 +441,7 @@ else:
                 ):
                     st.dataframe(
                         solves_sub2[
-                            ["competición", "año", "ronda", "solves segundos"]
+                            ["competición", "ronda", "solves segundos"]
                         ],
                         hide_index=True,
                         use_container_width=True,
@@ -455,13 +450,111 @@ else:
         st.markdown("---")
         st.caption(
             f"ℹ️ **Nota:** Se calcula el porcentaje de soluciones sub-{limite_tiempo:.2f} respecto al "
-            f"total de solves registradas en cada año."
+            f"total de solves válidas (no DNF, no DNS) de cada año."
+        )
+    # ==================== PESTAÑA 3 ====================
+    with tab3:
+        st.write("### ⚡ Media de las Últimas N Soluciones Oficiales (AoN)")
+
+        tamano_n = st.selectbox(
+            "Selecciona la cantidad de soluciones recientes a promediar (N):",
+            options=[12, 25, 50, 100, 500, 1000],
+            index=1,
         )
 
+        st.markdown(f"#### 📊 Resultados para las Últimas {tamano_n} Soluciones (Ao{tamano_n})")
 
+        # Como el DataFrame ya está en orden inverso exacto, tomamos los primeros N elementos con .head(N)
+        df_recientes_1 = df_comp1.head(tamano_n)
+        solves_contadas_1 = len(df_recientes_1)
 
+        if not tiene_comp2:
+            if solves_contadas_1 < tamano_n:
+                st.warning(
+                    f"⚠️ **{wca_id_1}** solo tiene **{solves_contadas_1}** soluciones registradas en total."
+                )
 
+            media_n_1 = df_recientes_1["solves segundos"].mean()
 
+            col_m1, col_m2 = st.columns(2)
+            with col_m1:
+                st.metric(
+                    label=f"Media de {tamano_n} (Últimas {solves_contadas_1} solves)",
+                    value=f"{media_n_1:.2f} s",
+                )
+            with col_m2:
+                st.metric(
+                    label="Mejor tiempo de la media",
+                    value=f"{df_recientes_1['solves segundos'].min():.2f} s",
+                )
 
+            with st.expander(
+                f"📋 Ver detalle de las {solves_contadas_1} solves (de más reciente a más antigua)"
+            ):
+                st.dataframe(
+                    df_recientes_1[["competición", "solves segundos"]],
+                    hide_index=True,
+                    use_container_width=True,
+                )
 
+        else:
+            df_recientes_2 = df_comp2.head(tamano_n)
+            solves_contadas_2 = len(df_recientes_2)
 
+            media_n_1 = df_recientes_1["solves segundos"].mean()
+            media_n_2 = df_recientes_2["solves segundos"].mean()
+
+            col_a, col_b = st.columns(2)
+
+            with col_a:
+                st.write(f"**Competidor 1 ({wca_id_1})**")
+                if solves_contadas_1 < tamano_n:
+                    st.warning(f"Tiene {solves_contadas_1}/{tamano_n} soluciones.")
+                st.metric(
+                    label=f"Media Ao{tamano_n}",
+                    value=f"{media_n_1:.2f} s",
+                )
+
+            with col_b:
+                st.write(f"**Competidor 2 ({wca_id_2})**")
+                if solves_contadas_2 < tamano_n:
+                    st.warning(f"Tiene {solves_contadas_2}/{tamano_n} soluciones.")
+                st.metric(
+                    label=f"Media Ao{tamano_n}",
+                    value=f"{media_n_2:.2f} s",
+                )
+
+            tabla_aon = pd.DataFrame(
+                {
+                    "Competidor": [wca_id_1, wca_id_2],
+                    f"Media Ao{tamano_n} (s)": [f"{media_n_1:.2f}", f"{media_n_2:.2f}"],
+                    "Soluciones Usadas": [solves_contadas_1, solves_contadas_2],
+                    "Mejor Tiempo en el Bloque (s)": [
+                        f"{df_recientes_1['solves segundos'].min():.2f}",
+                        f"{df_recientes_2['solves segundos'].min():.2f}",
+                    ],
+                }
+            )
+
+            st.write("#### 📋 Comparativa Directa")
+            st.dataframe(tabla_aon, hide_index=True, use_container_width=True)
+
+            with st.expander(f"📋 Ver detalle de las {solves_contadas_1} solves ({wca_id_1})"):
+                st.dataframe(
+                    df_recientes_1[["competición", "solves segundos"]],
+                    hide_index=True,
+                    use_container_width=True,
+                )
+
+            with st.expander(f"📋 Ver detalle de las {solves_contadas_2} solves ({wca_id_2})"):
+                st.dataframe(
+                    df_recientes_2[["competición", "solves segundos"]],
+                    hide_index=True,
+                    use_container_width=True,
+                )
+
+        st.markdown("---")
+        st.caption(
+            f"ℹ️ **Nota:** se calcula la media de las "
+            f"últimas {tamano_n} soluciones válidas (no DNF no DNS)."
+        )
