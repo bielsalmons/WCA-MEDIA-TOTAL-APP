@@ -1,45 +1,63 @@
+import re
 import altair as alt
 import pandas as pd
 import requests
 import streamlit as st
 
-st.title("🧩 Estadísticas oficiales de 3x3x3")
+st.set_page_config(
+    page_title="Estadísticas WCA 3x3x3", page_icon="🧩", layout="wide"
+)
 
-# ==================== BARRA LATERAL (ENTRADAS) ====================
-st.sidebar.header("🔍 Buscar Competidores")
-wca_id_1 = st.sidebar.text_input("WCA ID 1 (Obligatorio):").strip().upper()
-wca_id_2 = st.sidebar.text_input("WCA ID 2 (Opcional):").strip().upper()
+st.title("🧩 Estadísticas Oficiales de 3x3x3 WCA")
+
+# ==================== CONTROLES PRINCIPALES (ENTRADAS EN PANTALLA) ====================
+col_wca1, col_wca2 = st.columns(2)
+
+with col_wca1:
+    wca_id_1 = st.text_input("🔍 WCA ID 1 (Obligatorio):", placeholder="Ej: 2015GONZ08").strip().upper()
+
+with col_wca2:
+    wca_id_2 = st.text_input("🔍 WCA ID 2 (Opcional - para comparar):", placeholder="Ej: 2017KRAS05").strip().upper()
+
+st.markdown("---")
 
 
-@st.cache_data
+@st.cache_data(ttl=3600)
 def obtener_solves_wca(wca_id_input):
     if not wca_id_input:
         return None
 
     wca_id_clean = wca_id_input.strip().upper()
-    URL = f"https://raw.githubusercontent.com/robiningelbrecht/wca-rest-api/refs/heads/v1/persons/{wca_id_clean}.json"
-    respuesta = requests.get(URL)
+    url = f"https://raw.githubusercontent.com/robiningelbrecht/wca-rest-api/refs/heads/v1/persons/{wca_id_clean}.json"
 
-    if respuesta.status_code != 200:
+    try:
+        respuesta = requests.get(url, timeout=10)
+        if respuesta.status_code != 200:
+            return None
+        datos = respuesta.json()
+    except requests.RequestException:
         return None
 
-    datos = respuesta.json()
     results = datos.get("results", {})
     solves = []
 
     for comp, event in results.items():
         if "333" in event:
             rondas = event["333"]
+            match_año = re.search(r"\d{4}$", comp)
+            if not match_año:
+                continue
+            año = int(match_año.group())
+
             for ronda in rondas:
                 nombre_ronda = ronda.get("round", "Desconocida")
                 solves_ronda = ronda.get("solves", [])
                 for tiempo in solves_ronda:
                     if tiempo > 0:
-                        año = comp[-4:]
                         solves.append(
                             {
                                 "competición": comp,
-                                "año": int(año),
+                                "año": año,
                                 "ronda": nombre_ronda,
                                 "solves segundos": tiempo / 100.0,
                             }
@@ -51,7 +69,7 @@ def obtener_solves_wca(wca_id_input):
     return pd.DataFrame(solves)
 
 
-# Función para renderizar gráficos de líneas sin fallos de índice/melt
+# Función para renderizar gráficos de líneas interactivos en Altair
 def mostrar_grafico_lineas(df, titulo_eje_y="Valor"):
     df_reset = df.reset_index()
     nombre_col_index = df_reset.columns[0]
@@ -60,19 +78,30 @@ def mostrar_grafico_lineas(df, titulo_eje_y="Valor"):
         id_vars=[nombre_col_index], var_name="Competidor", value_name="Valor"
     ).rename(columns={nombre_col_index: "Año"})
 
+    df_melted = df_melted.dropna(subset=["Valor"])
+
+    selection = alt.selection_point(fields=["Competidor"], bind="legend")
+
     chart = (
         alt.Chart(df_melted)
         .mark_line(point=True)
         .encode(
-            x=alt.X("Año:N", sort=None, title="Año"),
+            x=alt.X("Año:O", title="Año", sort=None),
             y=alt.Y("Valor:Q", title=titulo_eje_y),
             color=alt.Color(
                 "Competidor:N",
                 scale=alt.Scale(range=["#00B4D8", "#FF4B4B"]),
             ),
-            tooltip=["Año", "Competidor", "Valor"],
+            opacity=alt.condition(selection, alt.value(1), alt.value(0.2)),
+            tooltip=[
+                alt.Tooltip("Año:O", title="Año"),
+                alt.Tooltip("Competidor:N", title="Competidor"),
+                alt.Tooltip("Valor:Q", title=titulo_eje_y, format=".2f"),
+            ],
         )
-        .properties(height=350)
+        .add_params(selection)
+        .properties(height=380)
+        .interactive()
     )
 
     st.altair_chart(chart, use_container_width=True)
@@ -83,22 +112,26 @@ df_comp1 = obtener_solves_wca(wca_id_1) if wca_id_1 else None
 df_comp2 = obtener_solves_wca(wca_id_2) if wca_id_2 else None
 
 if not wca_id_1:
-    st.info("👈 Por favor, introduce al menos un WCA ID en la barra lateral para empezar.")
+    st.info(
+        "👆 Introduce un WCA ID en la casilla superior para consultar y generar los gráficos."
+    )
 elif df_comp1 is None:
-    st.error(f"No se encontró el WCA ID: **{wca_id_1}**")
+    st.error(
+        f"No se pudo encontrar o cargar la información del WCA ID: **{wca_id_1}**"
+    )
 elif df_comp1.empty:
-    st.warning(f"El competidor **{wca_id_1}** no tiene solves registradas en 3x3.")
+    st.warning(f"El competidor **{wca_id_1}** no tiene soluciones registradas en 3x3.")
 else:
     tiene_comp2 = False
     if wca_id_2:
         if df_comp2 is None:
-            st.sidebar.error(f"No se encontró el WCA ID opcional: {wca_id_2}")
+            st.error(f"No se encontró el WCA ID opcional: **{wca_id_2}**")
         elif df_comp2.empty:
-            st.sidebar.warning(f"{wca_id_2} no tiene solves en 3x3.")
+            st.warning(f"**{wca_id_2}** no tiene soluciones registradas en 3x3.")
         else:
             tiene_comp2 = True
 
-    tab1, tab2 = st.tabs(["📊 Evolución de Medias", "⏱️ Tasa sub-X"])
+    tab1, tab2 = st.tabs(["📊 Evolución de Medias", "⏱️ Tasa Sub-X"])
 
     # ==================== PESTAÑA 1 ====================
     with tab1:
@@ -124,11 +157,13 @@ else:
         df_grafico_medias_ordenado.index = df_grafico_medias_ordenado.index.astype(str)
 
         if tiene_comp2:
-            mostrar_grafico_lineas(df_grafico_medias_ordenado, titulo_eje_y="Media (s)")
+            mostrar_grafico_lineas(
+                df_grafico_medias_ordenado, titulo_eje_y="Media (s)"
+            )
         else:
             st.line_chart(df_grafico_medias_ordenado)
 
-        st.write("### 📋 Resumen histórico por año")
+        st.write("### 📋 Resumen Histórico por Año")
 
         if not tiene_comp2:
             resumen_medias = resumen_1.sort_index(ascending=False)
@@ -136,7 +171,10 @@ else:
             media_global = df_comp1["solves segundos"].mean()
 
             fila_total = pd.DataFrame(
-                {"media": [round(media_global, 2)], "total_solves": [total_solves_global]},
+                {
+                    "media": [round(media_global, 2)],
+                    "total_solves": [total_solves_global],
+                },
                 index=["Total General"],
             )
 
@@ -145,24 +183,72 @@ else:
             resumen_completo = resumen_completo.rename(
                 columns={
                     "index": "Año",
-                    "media": "Media",
-                    "total_solves": "Soluciones totales",
+                    "media": "Media (s)",
+                    "total_solves": "Soluciones Totales",
                 }
             )
-            resumen_completo["Media"] = resumen_completo["Media"].apply(
+            resumen_completo["Media (s)"] = resumen_completo["Media (s)"].apply(
                 lambda x: f"{x:.2f}"
             )
-            st.dataframe(resumen_completo, hide_index=True, use_container_width=True)
+            st.dataframe(
+                resumen_completo, hide_index=True, use_container_width=True
+            )
         else:
-            tabla_comp = df_grafico_medias.sort_index(ascending=False).reset_index()
-            tabla_comp = tabla_comp.rename(columns={"año": "Año"})
-            st.dataframe(tabla_comp, hide_index=True, use_container_width=True)
+            col_m1 = f"Media (s) ({wca_id_1})"
+            col_s1 = f"Solves ({wca_id_1})"
+            col_m2 = f"Media (s) ({wca_id_2})"
+            col_s2 = f"Solves ({wca_id_2})"
 
-        # Nota aclaratoria al final del Tab 1
+            tabla_comp_medias = pd.DataFrame(
+                {
+                    col_m1: resumen_1["media"],
+                    col_s1: resumen_1["total_solves"],
+                    col_m2: resumen_2["media"],
+                    col_s2: resumen_2["total_solves"],
+                }
+            )
+
+            tabla_comp_medias = tabla_comp_medias.sort_index(ascending=False)
+            tabla_comp_medias.index = tabla_comp_medias.index.astype(str)
+
+            # Calcular fila de Total General
+            total_s1 = len(df_comp1)
+            media_g1 = df_comp1["solves segundos"].mean()
+            total_s2 = len(df_comp2)
+            media_g2 = df_comp2["solves segundos"].mean()
+
+            fila_total = pd.DataFrame(
+                {
+                    col_m1: [round(media_g1, 2)],
+                    col_s1: [total_s1],
+                    col_m2: [round(media_g2, 2)],
+                    col_s2: [total_s2],
+                },
+                index=["Total General"],
+            )
+
+            tabla_completa = pd.concat([tabla_comp_medias, fila_total]).reset_index()
+            tabla_completa = tabla_completa.rename(columns={"index": "Año"})
+
+            # Formatear números
+            cols_solves = [col_s1, col_s2]
+            tabla_completa[cols_solves] = tabla_completa[cols_solves].fillna(0).astype(int)
+
+            tabla_completa[col_m1] = tabla_completa[col_m1].apply(
+                lambda x: f"{x:.2f}" if pd.notnull(x) else "-"
+            )
+            tabla_completa[col_m2] = tabla_completa[col_m2].apply(
+                lambda x: f"{x:.2f}" if pd.notnull(x) else "-"
+            )
+
+            st.dataframe(
+                tabla_completa, hide_index=True, use_container_width=True
+            )
+
         st.markdown("---")
         st.caption(
             "ℹ️ **Nota:** Se calcula la media de todas las soluciones oficiales de 3x3 "
-            "(excluyendo los DNF y los DNS) por año (incluye las soluciones de las finales head to head)."
+            "(excluyendo DNF y DNS) por año (incluye las soluciones de las finales head-to-head)."
         )
 
     # ==================== PESTAÑA 2 ====================
@@ -202,11 +288,13 @@ else:
         df_grafico_tasa_ordenado.index = df_grafico_tasa_ordenado.index.astype(str)
 
         if tiene_comp2:
-            mostrar_grafico_lineas(df_grafico_tasa_ordenado, titulo_eje_y="Tasa (%)")
+            mostrar_grafico_lineas(
+                df_grafico_tasa_ordenado, titulo_eje_y="Tasa (%)"
+            )
         else:
             st.line_chart(df_grafico_tasa_ordenado)
 
-        # 2. Resumen rápido en cajas
+        # 2. Resumen en métricas
         st.write("### 🎯 Totales Históricos")
         sub_1 = (df_comp1["solves segundos"] < limite_tiempo).sum()
         total_1 = len(df_comp1)
@@ -259,14 +347,18 @@ else:
                     "porcentaje": "Tasa %",
                 }
             )
-            tabla_final["Tasa %"] = tabla_final["Tasa %"].apply(lambda x: f"{x:.2f}%")
+            tabla_final["Tasa %"] = tabla_final["Tasa %"].apply(
+                lambda x: f"{x:.2f}%"
+            )
 
             tabla_estilizada = tabla_final.style.map(
                 lambda v: "background-color: rgba(0, 180, 216, 0.2); font-weight: bold;",
                 subset=["Tasa %"],
             )
 
-            st.dataframe(tabla_estilizada, hide_index=True, use_container_width=True)
+            st.dataframe(
+                tabla_estilizada, hide_index=True, use_container_width=True
+            )
 
         else:
             col_sub1 = f"Sub-{limite_tiempo:.2f} ({wca_id_1})"
@@ -281,28 +373,46 @@ else:
                 {
                     col_sub1: tasa_1["solves_sub_x"],
                     col_tot1: tasa_1["total_solves"],
-                    col_tasa1: tasa_1["porcentaje"].apply(lambda x: f"{x:.2f}%"),
+                    col_tasa1: tasa_1["porcentaje"],
                     col_sub2: tasa_2["solves_sub_x"],
                     col_tot2: tasa_2["total_solves"],
-                    col_tasa2: tasa_2["porcentaje"].apply(lambda x: f"{x:.2f}%"),
+                    col_tasa2: tasa_2["porcentaje"],
                 }
             )
 
-            # Convertimos las columnas de conteo a enteros limpios sin decimales
+            tabla_comp_tasa = tabla_comp_tasa.sort_index(ascending=False)
+            tabla_comp_tasa.index = tabla_comp_tasa.index.astype(str)
+
+            # Fila de Total Histórico en la comparación
+            fila_total_tasa = pd.DataFrame(
+                {
+                    col_sub1: [sub_1],
+                    col_tot1: [total_1],
+                    col_tasa1: [round(pct_1, 2)],
+                    col_sub2: [sub_2],
+                    col_tot2: [total_2],
+                    col_tasa2: [round(pct_2, 2)],
+                },
+                index=["Total Histórico"],
+            )
+
+            tabla_comp_tasa_completa = pd.concat([tabla_comp_tasa, fila_total_tasa]).reset_index()
+            tabla_comp_tasa_completa = tabla_comp_tasa_completa.rename(columns={"index": "Año"})
+
             cols_enteras = [col_sub1, col_tot1, col_sub2, col_tot2]
-            tabla_comp_tasa[cols_enteras] = (
-                tabla_comp_tasa[cols_enteras].fillna(0).astype(int)
+            tabla_comp_tasa_completa[cols_enteras] = (
+                tabla_comp_tasa_completa[cols_enteras].fillna(0).astype(int)
             )
 
-            tabla_comp_tasa = (
-                tabla_comp_tasa.sort_index(ascending=False)
-                .reset_index()
-                .rename(columns={"año": "Año"})
+            # Formatear porcentajes
+            tabla_comp_tasa_completa[col_tasa1] = tabla_comp_tasa_completa[col_tasa1].apply(
+                lambda x: f"{x:.2f}%" if pd.notnull(x) else "-"
+            )
+            tabla_comp_tasa_completa[col_tasa2] = tabla_comp_tasa_completa[col_tasa2].apply(
+                lambda x: f"{x:.2f}%" if pd.notnull(x) else "-"
             )
 
-            tabla_comp_tasa = tabla_comp_tasa.rename(columns={"año": "Año"})
-
-            tabla_estilizada = tabla_comp_tasa.style.map(
+            tabla_estilizada = tabla_comp_tasa_completa.style.map(
                 lambda v: "background-color: rgba(0, 180, 216, 0.25); font-weight: bold;",
                 subset=[col_tasa1],
             ).map(
@@ -310,17 +420,22 @@ else:
                 subset=[col_tasa2],
             )
 
-            st.dataframe(tabla_estilizada, hide_index=True, use_container_width=True)
+            st.dataframe(
+                tabla_estilizada, hide_index=True, use_container_width=True
+            )
 
-        # 4. Desplegables
+        # 4. Desplegables con detalle
         solves_sub1 = df_comp1[df_comp1["solves segundos"] < limite_tiempo]
         if len(solves_sub1) > 0:
             with st.expander(
                 f"Ver detalle de soluciones Sub-{limite_tiempo:.2f} ({wca_id_1})"
             ):
                 st.dataframe(
-                    solves_sub1[["competición", "año", "ronda", "solves segundos"]],
+                    solves_sub1[
+                        ["competición", "año", "ronda", "solves segundos"]
+                    ],
                     hide_index=True,
+                    use_container_width=True,
                 )
 
         if tiene_comp2:
@@ -330,15 +445,17 @@ else:
                     f"Ver detalle de soluciones Sub-{limite_tiempo:.2f} ({wca_id_2})"
                 ):
                     st.dataframe(
-                        solves_sub2[["competición", "año", "ronda", "solves segundos"]],
+                        solves_sub2[
+                            ["competición", "año", "ronda", "solves segundos"]
+                        ],
                         hide_index=True,
+                        use_container_width=True,
                     )
 
-        # Nota aclaratoria al final del Tab 2
         st.markdown("---")
         st.caption(
-            f"ℹ️ **Nota:** Se calcula el número de soluciones sub {limite_tiempo:.2f} entre el total "
-            f"de solves de un año multiplicado por 100 para calcular el porcentaje."
+            f"ℹ️ **Nota:** Se calcula el porcentaje de soluciones sub-{limite_tiempo:.2f} respecto al "
+            f"total de solves registradas en cada año."
         )
 
 
