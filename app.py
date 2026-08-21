@@ -135,7 +135,7 @@ else:
         else:
             tiene_comp2 = True
 
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Evolución de Medias", "⏱️ Tasa Sub-X", "⚡ Últimas N Solves (AoN)", "Variabilidad"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Evolución de Medias", "⏱️ Tasa Sub-X", "⚡ Medias de N (AoN)", "Variabilidad"])
 
     # ==================== PESTAÑA 1 ====================
     with tab1:
