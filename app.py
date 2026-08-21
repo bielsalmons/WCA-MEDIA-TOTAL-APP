@@ -525,7 +525,7 @@ else:
                 col_m1, col_m2 = st.columns(2)
                 with col_m1:
                     st.metric(
-                        label=f"Media Actual (Últimas {tamano_n})" + (" [WCA Trimmed]" if tamano_n == 5 else ""),
+                        label=f"Media Actual (Últimas {tamano_n})" ,
                         value=f"{media_act_1:.2f} s",
                     )
                     st.caption(f"⏱️ **Mejor Single (Media Actual):** {df_act_1['solves segundos'].min():.2f} s")
