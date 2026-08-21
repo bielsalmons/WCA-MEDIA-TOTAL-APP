@@ -452,111 +452,179 @@ else:
             f"ℹ️ **Nota:** Se calcula el porcentaje de soluciones sub-{limite_tiempo:.2f} respecto al "
             f"total de solves válidas (no DNF, no DNS) de cada año."
         )
-    # ==================== PESTAÑA 3 ====================
+    
+# ==================== PESTAÑA 3 ====================
     with tab3:
-        st.write("### ⚡ Media de las Últimas N Soluciones Oficiales (AoN)")
+        st.write("### ⚡ Actual y mejor media de N soluciones")
 
         tamano_n = st.selectbox(
-            "Selecciona la cantidad de soluciones recientes a promediar (N):",
-            options=[12, 25, 50, 100, 500, 1000],
-            index=1,
+            "Selecciona la cantidad de soluciones consecutivas a promediar (N):",
+            options=[5, 12, 25, 50, 100, 500, 1000],
+            index=0,
         )
 
-        st.markdown(f"#### 📊 Resultados para las Últimas {tamano_n} Soluciones (Ao{tamano_n})")
+        
 
-        # Como el DataFrame ya está en orden inverso exacto, tomamos los primeros N elementos con .head(N)
-        df_recientes_1 = df_comp1.head(tamano_n)
-        solves_contadas_1 = len(df_recientes_1)
+        # Función auxiliar para calcular la media según N (Trimmed mean en N=5, media simple en el resto)
+        def calcular_media_bloque(serie_tiempos):
+            if len(serie_tiempos) != tamano_n:
+                return None
+            if tamano_n == 5:
+                # Regla WCA: se elimina el máximo y el mínimo y se promedian los 3 centrales
+                tiempos_ordenados = sorted(serie_tiempos)
+                return sum(tiempos_ordenados[1:4]) / 3.0
+            else:
+                return serie_tiempos.mean()
+
+        def obtener_metricas_aon(df, n):
+            if df.empty or len(df) < n:
+                return None, None, None, None, len(df)
+
+            # 1. Bloque Actual (primeras N filas del DataFrame)
+            df_recientes = df.head(n).copy()
+            media_actual = calcular_media_bloque(df_recientes["solves segundos"])
+
+            # 2. Mejor Media Histórica mediante ventana móvil
+            df_cronologico = df.iloc[::-1].reset_index(drop=True)
+            
+            mejor_media_historica = float("inf")
+            idx_mejor_bloque = -1
+
+            # Recorremos cada ventana posible de tamaño N
+            for i in range(len(df_cronologico) - n + 1):
+                bloque = df_cronologico.iloc[i : i + n]["solves segundos"]
+                media_bloque = calcular_media_bloque(bloque)
+                
+                if media_bloque is not None and media_bloque < mejor_media_historica:
+                    mejor_media_historica = media_bloque
+                    idx_mejor_bloque = i
+
+            if idx_mejor_bloque != -1:
+                df_mejor_bloque = df_cronologico.iloc[idx_mejor_bloque : idx_mejor_bloque + n].copy()
+                # Revertimos para mostrarlo de más reciente a más antiguo dentro del bloque
+                df_mejor_bloque = df_mejor_bloque.iloc[::-1].reset_index(drop=True)
+            else:
+                df_mejor_bloque = pd.DataFrame()
+                mejor_media_historica = None
+
+            return media_actual, mejor_media_historica, df_recientes, df_mejor_bloque, len(df)
+
+        res_1 = obtener_metricas_aon(df_comp1, tamano_n)
+        media_act_1, mejor_med_1, df_act_1, df_mej_1, total_solves_1 = res_1
 
         if not tiene_comp2:
-            if solves_contadas_1 < tamano_n:
+            st.write(f"**Competidor: {wca_id_1}**")
+
+            if total_solves_1 < tamano_n:
                 st.warning(
-                    f"⚠️ **{wca_id_1}** solo tiene **{solves_contadas_1}** soluciones registradas en total."
+                    f"⚠️ **{wca_id_1}** solo tiene **{total_solves_1}** soluciones registradas. "
+                    f"Se necesitan al menos **{tamano_n}** para calcular el Ao{tamano_n}."
                 )
+            else:
+                # Métricas principales
+                col_m1, col_m2 = st.columns(2)
+                with col_m1:
+                    st.metric(
+                        label=f"Media Actual (Últimas {tamano_n})" + (" [WCA Trimmed]" if tamano_n == 5 else ""),
+                        value=f"{media_act_1:.2f} s",
+                    )
+                    st.caption(f"⏱️ **Mejor Single (Media Actual):** {df_act_1['solves segundos'].min():.2f} s")
 
-            media_n_1 = df_recientes_1["solves segundos"].mean()
+                with col_m2:
+                    st.metric(
+                        label=f"🏆 Mejor Ao{tamano_n} Histórico",
+                        value=f"{mejor_med_1:.2f} s",
+                        delta=f"{media_act_1 - mejor_med_1:+.2f} s vs actual" if media_act_1 else None,
+                        delta_color="inverse",
+                    )
+                    st.caption(f"🥇 **Mejor Single (Mejor Media):** {df_mej_1['solves segundos'].min():.2f} s")
 
-            col_m1, col_m2 = st.columns(2)
-            with col_m1:
-                st.metric(
-                    label=f"Media de {tamano_n} (Últimas {solves_contadas_1} solves)",
-                    value=f"{media_n_1:.2f} s",
-                )
-            with col_m2:
-                st.metric(
-                    label="Mejor tiempo de la media",
-                    value=f"{df_recientes_1['solves segundos'].min():.2f} s",
-                )
+                st.markdown("---")
 
-            with st.expander(
-                f"📋 Ver detalle de las {solves_contadas_1} solves (de más reciente a más antigua)"
-            ):
-                st.dataframe(
-                    df_recientes_1[["competición", "solves segundos"]],
-                    hide_index=True,
-                    use_container_width=True,
-                )
+                # Desplegables de detalles
+                col_exp1, col_exp2 = st.columns(2)
+                with col_exp1:
+                    with st.expander(f"📋 Detalle: Últimas {tamano_n} solves (Actual)"):
+                        st.dataframe(
+                            df_act_1[["competición", "ronda", "num_solve", "solves segundos"]],
+                            hide_index=True,
+                            use_container_width=True,
+                        )
+                with col_exp2:
+                    with st.expander(f"🏆 Detalle: Solves del Mejor Ao{tamano_n} Histórico"):
+                        st.dataframe(
+                            df_mej_1[["competición", "ronda", "num_solve", "solves segundos"]],
+                            hide_index=True,
+                            use_container_width=True,
+                        )
 
         else:
-            df_recientes_2 = df_comp2.head(tamano_n)
-            solves_contadas_2 = len(df_recientes_2)
-
-            media_n_1 = df_recientes_1["solves segundos"].mean()
-            media_n_2 = df_recientes_2["solves segundos"].mean()
+            res_2 = obtener_metricas_aon(df_comp2, tamano_n)
+            media_act_2, mejor_med_2, df_act_2, df_mej_2, total_solves_2 = res_2
 
             col_a, col_b = st.columns(2)
 
+            # Tarjeta Competidor 1
             with col_a:
-                st.write(f"**Competidor 1 ({wca_id_1})**")
-                if solves_contadas_1 < tamano_n:
-                    st.warning(f"Tiene {solves_contadas_1}/{tamano_n} soluciones.")
-                st.metric(
-                    label=f"Media Ao{tamano_n}",
-                    value=f"{media_n_1:.2f} s",
-                )
+                st.write(f"### 👤 {wca_id_1}")
+                if total_solves_1 < tamano_n:
+                    st.warning(f"Tiene {total_solves_1}/{tamano_n} soluciones.")
+                else:
+                    st.metric(label=f"Media Actual Ao{tamano_n}", value=f"{media_act_1:.2f} s")
+                    st.caption(f"⏱️ Mejor Single (Actual): **{df_act_1['solves segundos'].min():.2f} s**")
+                    st.metric(label=f"🏆 Mejor Ao{tamano_n} Histórico", value=f"{mejor_med_1:.2f} s")
+                    st.caption(f"🥇 Mejor Single (Histórico): **{df_mej_1['solves segundos'].min():.2f} s**")
 
+            # Tarjeta Competidor 2
             with col_b:
-                st.write(f"**Competidor 2 ({wca_id_2})**")
-                if solves_contadas_2 < tamano_n:
-                    st.warning(f"Tiene {solves_contadas_2}/{tamano_n} soluciones.")
-                st.metric(
-                    label=f"Media Ao{tamano_n}",
-                    value=f"{media_n_2:.2f} s",
-                )
-
-            tabla_aon = pd.DataFrame(
-                {
-                    "Competidor": [wca_id_1, wca_id_2],
-                    f"Media Ao{tamano_n} (s)": [f"{media_n_1:.2f}", f"{media_n_2:.2f}"],
-                    "Soluciones Usadas": [solves_contadas_1, solves_contadas_2],
-                    "Mejor Tiempo en el Bloque (s)": [
-                        f"{df_recientes_1['solves segundos'].min():.2f}",
-                        f"{df_recientes_2['solves segundos'].min():.2f}",
-                    ],
-                }
-            )
+                st.write(f"### 👤 {wca_id_2}")
+                if total_solves_2 < tamano_n:
+                    st.warning(f"Tiene {total_solves_2}/{tamano_n} soluciones.")
+                else:
+                    st.metric(label=f"Media Actual Ao{tamano_n}", value=f"{media_act_2:.2f} s")
+                    st.caption(f"⏱️ Mejor Single (Actual): **{df_act_2['solves segundos'].min():.2f} s**")
+                    st.metric(label=f"🏆 Mejor Ao{tamano_n} Histórico", value=f"{mejor_med_2:.2f} s")
+                    st.caption(f"🥇 Mejor Single (Histórico): **{df_mej_2['solves segundos'].min():.2f} s**")
 
             st.write("#### 📋 Comparativa Directa")
+
+            val_act_1 = f"{media_act_1:.2f} s" if media_act_1 else "-"
+            val_mej_1 = f"{mejor_med_1:.2f} s" if mejor_med_1 else "-"
+            val_act_2 = f"{media_act_2:.2f} s" if media_act_2 else "-"
+            val_mej_2 = f"{mejor_med_2:.2f} s" if mejor_med_2 else "-"
+
+            tabla_aon = pd.DataFrame({
+                "Competidor": [wca_id_1, wca_id_2],
+                f"Media Actual Ao{tamano_n}": [val_act_1, val_act_2],
+                f"Mejor Ao{tamano_n} Histórico": [val_mej_1, val_mej_2],
+                "Soluciones Totales": [total_solves_1, total_solves_2],
+            })
             st.dataframe(tabla_aon, hide_index=True, use_container_width=True)
 
-            with st.expander(f"📋 Ver detalle de las {solves_contadas_1} solves ({wca_id_1})"):
-                st.dataframe(
-                    df_recientes_1[["competición", "solves segundos"]],
-                    hide_index=True,
-                    use_container_width=True,
-                )
+            st.markdown("---")
+            st.write("#### 🔍 Detalle de Bloques de Soluciones")
 
-            with st.expander(f"📋 Ver detalle de las {solves_contadas_2} solves ({wca_id_2})"):
-                st.dataframe(
-                    df_recientes_2[["competición", "solves segundos"]],
-                    hide_index=True,
-                    use_container_width=True,
-                )
+            col_det1, col_det2 = st.columns(2)
+            with col_det1:
+                st.write(f"**{wca_id_1}**")
+                if total_solves_1 >= tamano_n:
+                    with st.expander(f"📋 Últimas {tamano_n} solves (Actual)"):
+                        st.dataframe(df_act_1[["competición", "ronda", "num_solve", "solves segundos"]], hide_index=True, use_container_width=True)
+                    with st.expander(f"🏆 Solves del Mejor Ao{tamano_n} Histórico"):
+                        st.dataframe(df_mej_1[["competición", "ronda", "num_solve", "solves segundos"]], hide_index=True, use_container_width=True)
+
+            with col_det2:
+                st.write(f"**{wca_id_2}**")
+                if total_solves_2 >= tamano_n:
+                    with st.expander(f"📋 Últimas {tamano_n} solves (Actual)"):
+                        st.dataframe(df_act_2[["competición", "ronda", "num_solve", "solves segundos"]], hide_index=True, use_container_width=True)
+                    with st.expander(f"🏆 Solves del Mejor Ao{tamano_n} Histórico"):
+                        st.dataframe(df_mej_2[["competición", "ronda", "num_solve", "solves segundos"]], hide_index=True, use_container_width=True)
 
         st.markdown("---")
         st.caption(
-            f"ℹ️ **Nota:** se calcula la media de las "
-            f"últimas {tamano_n} soluciones válidas (no DNF no DNS)."
+            "ℹ️ **Nota WCA:** Cuando se selecciona **N = 5**, el cálculo descarta automáticamente el mejor y el peor tiempo "
+            "del bloque de 5 para computar la media (*trimmed mean*). Para $N > 5$, se calcula la media aritmética simple."
         )
         # ==================== PESTAÑA DE VARIABILIDAD ====================
     with tab4:
