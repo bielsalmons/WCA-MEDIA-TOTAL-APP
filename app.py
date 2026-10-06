@@ -698,21 +698,22 @@ elif seccion_principal == "🎖️ Salón de Logros (3x3x3)":
     ]
 
     def obtener_imagen_base64(nombre_archivo):
-        directorio = os.path.join("LOGOS LOGROS", "Medallas claude", "Definitivas")
-        extensiones = [".png", ".jpg", ".jpeg", ".webp"]
-        
-        for ext in extensiones:
-            ruta = os.path.join(directorio, f"{nombre_archivo}{ext}")
-            if os.path.exists(ruta):
-                try:
-                    with open(ruta, "rb") as f:
-                        data = f.read()
-                        encoded = base64.b64encode(data).decode()
-                        mime = "image/png" if ext == ".png" else "image/jpeg"
-                        return f"data:{mime};base64,{encoded}"
-                except Exception:
-                    pass
-        return None
+    # Al dejarlo vacío "", busca las imágenes directamente en la raíz del repositorio
+    directorio = ""
+    extensiones = [".png", ".jpg", ".jpeg", ".webp"]
+    
+    for ext in extensiones:
+        ruta = os.path.join(directorio, f"{nombre_archivo}{ext}") if directorio else f"{nombre_archivo}{ext}"
+        if os.path.exists(ruta):
+            try:
+                with open(ruta, "rb") as f:
+                    data = f.read()
+                    encoded = base64.b64encode(data).decode()
+                    mime = "image/png" if ext == ".png" else "image/jpeg"
+                    return f"data:{mime};base64,{encoded}"
+            except Exception:
+                pass
+    return None
 
     def renderizar_imagen_logro_html(nombre_archivo, color="#FFD700", desbloqueado=True):
         img_b64 = obtener_imagen_base64(nombre_archivo)
