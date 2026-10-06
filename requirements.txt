@@ -1,6 +1,3 @@
-os
-re
-base64
 altair
 pandas
 requests
