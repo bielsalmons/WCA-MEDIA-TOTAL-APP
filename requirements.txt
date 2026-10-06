@@ -1,6 +1,7 @@
-streamlit
+os
+re
+base64
+altair
 pandas
 requests
-altair
-matplotlib
-jinja2
+streamlit
