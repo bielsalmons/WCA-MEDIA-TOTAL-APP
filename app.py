@@ -1,4 +1,6 @@
+import os
 import re
+import base64
 import altair as alt
 import pandas as pd
 import requests
@@ -76,15 +78,15 @@ def obtener_nombre_competidor(wca_id_target):
         pass
     return wca_id_target
 
-# ==================== CONTROLES PRINCIPALES ====================
+# ==================== CONTROLES PRINCIPALES DE COMPETIDORES ====================
 col_wca1, col_wca2 = st.columns(2)
 
 with col_wca1:
-    input_1 = st.text_input("🔍 Competidor 1 (WCA ID o Nombre):", placeholder="Ej: 2015GONZ08 o Carlos").strip()
+    input_1 = st.text_input("🔍 Competidor 1 (WCA ID o Nombre):", placeholder="Ej: 2015GONZ08 o Biel Salmons").strip()
     wca_id_1 = resolver_wca_id(input_1, "Competidor 1") if input_1 else None
 
 with col_wca2:
-    input_2 = st.text_input("🔍 Competidor 2 (Opcional - WCA ID o Nombre):", placeholder="Ej: 2017KRAS05 o Alex").strip()
+    input_2 = st.text_input("🔍 Competidor 2 (Opcional - WCA ID o Nombre):", placeholder="Ej: 2017KRAS05 o Lorenzo Escobar").strip()
     wca_id_2 = resolver_wca_id(input_2, "Competidor 2") if input_2 else None
 
 eventos_disponibles = ["333"]
@@ -106,12 +108,13 @@ if wca_id_1:
         if lista_evs:
             eventos_disponibles = lista_evs
 
-evento_elegido = st.selectbox(
-    "🧩 Selecciona el Evento a analizar:",
-    options=eventos_disponibles,
-    format_func=lambda x: NOMBRES_EVENTOS.get(x, x),
+# ==================== NAVEGACIÓN PRINCIPAL ENTRE SECCIONES ====================
+st.markdown("---")
+seccion_principal = st.radio(
+    "📌 Selecciona la Sección:",
+    options=["🏠 Inicio / Análisis General", "🎖️ Salón de Logros (3x3x3)"],
+    horizontal=True,
 )
-
 st.markdown("---")
 
 # ==================== EXTRACCIÓN DE SOLVES POR EVENTO ====================
@@ -198,463 +201,633 @@ def mostrar_grafico_lineas(df, titulo_eje_y="Valor"):
 
     st.altair_chart(chart, use_container_width=True)
 
-
-# ==================== CARGA DE DATOS ====================
-df_comp1 = obtener_solves_wca_evento(wca_id_1, evento_elegido) if wca_id_1 else None
-df_comp2 = obtener_solves_wca_evento(wca_id_2, evento_elegido) if wca_id_2 else None
-
-unidad_medida = "movs" if evento_elegido == "333fm" else "s"
-
+# Validación inicial de usuario
 if not wca_id_1:
     st.info("👆 Introduce un WCA ID o Nombre en la casilla superior para comenzar.")
-elif df_comp1 is None:
-    st.error(f"No se pudo cargar la información del WCA ID: **{wca_id_1}**")
-else:
-    tiene_comp2 = False
-    if wca_id_2:
-        if df_comp2 is None:
-            st.error(f"No se encontró el WCA ID opcional: **{wca_id_2}**")
-        elif df_comp2.empty:
-            st.warning(f"**{nombre_2}** no tiene soluciones registradas en {NOMBRES_EVENTOS.get(evento_elegido, evento_elegido)}.")
-        else:
-            tiene_comp2 = True
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "📊 Evolución de Medias", 
-        "⏱️ Tasa Sub-X", 
-        "⚡ Medias de N (AoN)", 
-        "📉 Variabilidad", 
-        "🏆 Top Mundial"
-    ])
+# ==================== VISTA 1: INICIO / ANÁLISIS GENERAL ====================
+elif seccion_principal == "🏠 Inicio / Análisis General":
+    index_defecto = eventos_disponibles.index("333") if "333" in eventos_disponibles else 0
 
-    # ==================== PESTAÑA 1 ====================
-    with tab1:
-        st.write(f"### 📊 Evolución de la Media por Años ({NOMBRES_EVENTOS.get(evento_elegido, evento_elegido)})")
+    evento_elegido = st.selectbox(
+        "🧩 Selecciona el Evento a analizar:",
+        options=eventos_disponibles,
+        index=index_defecto,
+        format_func=lambda x: NOMBRES_EVENTOS.get(x, x),
+    )
 
-        if df_comp1.empty:
-            st.warning(f"El competidor **{nombre_1}** no tiene soluciones registradas en este evento.")
-        else:
-            resumen_1 = (
-                df_comp1.groupby("año")["solves segundos"]
-                .agg(media="mean", total_solves="count")
-                .round(2)
-            )
+    df_comp1 = obtener_solves_wca_evento(wca_id_1, evento_elegido) if wca_id_1 else None
+    df_comp2 = obtener_solves_wca_evento(wca_id_2, evento_elegido) if wca_id_2 else None
 
-            df_grafico_medias = pd.DataFrame({nombre_1: resumen_1["media"]})
+    unidad_medida = "movs" if evento_elegido == "333fm" else "s"
 
-            if tiene_comp2 and not df_comp2.empty:
-                resumen_2 = (
-                    df_comp2.groupby("año")["solves segundos"]
+    if df_comp1 is None:
+        st.error(f"No se pudo cargar la información del WCA ID: **{wca_id_1}**")
+    else:
+        tiene_comp2 = False
+        if wca_id_2:
+            if df_comp2 is None:
+                st.error(f"No se encontró el WCA ID opcional: **{wca_id_2}**")
+            elif df_comp2.empty:
+                st.warning(f"**{nombre_2}** no tiene soluciones registradas en {NOMBRES_EVENTOS.get(evento_elegido, evento_elegido)}.")
+            else:
+                tiene_comp2 = True
+
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "📊 Evolución de Medias", 
+            "⏱️ Tasa Sub-X", 
+            "⚡ Medias de N (AoN)", 
+            "📉 Variabilidad", 
+            "🏆 Top Mundial"
+        ])
+
+        # --- PESTAÑA 1 ---
+        with tab1:
+            st.write(f"### 📊 Evolución de la Media por Años ({NOMBRES_EVENTOS.get(evento_elegido, evento_elegido)})")
+
+            if df_comp1.empty:
+                st.warning(f"El competidor **{nombre_1}** no tiene soluciones registradas en este evento.")
+            else:
+                resumen_1 = (
+                    df_comp1.groupby("año")["solves segundos"]
                     .agg(media="mean", total_solves="count")
                     .round(2)
                 )
-                df_grafico_medias[nombre_2] = resumen_2["media"]
 
-            df_grafico_medias_ordenado = df_grafico_medias.sort_index(ascending=True)
-            df_grafico_medias_ordenado.index = df_grafico_medias_ordenado.index.astype(str)
+                df_grafico_medias = pd.DataFrame({nombre_1: resumen_1["media"]})
 
-            if tiene_comp2:
-                mostrar_grafico_lineas(df_grafico_medias_ordenado, titulo_eje_y=f"Media ({unidad_medida})")
-            else:
-                st.line_chart(df_grafico_medias_ordenado)
+                if tiene_comp2 and not df_comp2.empty:
+                    resumen_2 = (
+                        df_comp2.groupby("año")["solves segundos"]
+                        .agg(media="mean", total_solves="count")
+                        .round(2)
+                    )
+                    df_grafico_medias[nombre_2] = resumen_2["media"]
 
-            st.write("### 📋 Resumen Histórico por Año")
+                df_grafico_medias_ordenado = df_grafico_medias.sort_index(ascending=True)
+                df_grafico_medias_ordenado.index = df_grafico_medias_ordenado.index.astype(str)
 
-            if not tiene_comp2:
-                resumen_medias = resumen_1.sort_index(ascending=False)
-                total_solves_global = len(df_comp1)
-                media_global = df_comp1["solves segundos"].mean()
+                if tiene_comp2:
+                    mostrar_grafico_lineas(df_grafico_medias_ordenado, titulo_eje_y=f"Media ({unidad_medida})")
+                else:
+                    st.line_chart(df_grafico_medias_ordenado)
 
-                fila_total = pd.DataFrame(
-                    {"media": [round(media_global, 2)], "total_solves": [total_solves_global]},
-                    index=["Total General"],
-                )
+                st.write("### 📋 Resumen Histórico por Año")
 
-                resumen_medias.index = resumen_medias.index.astype(str)
-                resumen_completo = pd.concat([resumen_medias, fila_total]).reset_index()
-                resumen_completo = resumen_completo.rename(
-                    columns={"index": "Año", "media": f"Media ({unidad_medida})", "total_solves": "Soluciones Totales"}
-                )
-                resumen_completo[f"Media ({unidad_medida})"] = resumen_completo[f"Media ({unidad_medida})"].apply(lambda x: f"{x:.2f}")
-                st.dataframe(resumen_completo, hide_index=True, use_container_width=True)
-            else:
-                col_m1, col_s1 = f"Media ({unidad_medida}) ({nombre_1})", f"Solves ({nombre_1})"
-                col_m2, col_s2 = f"Media ({unidad_medida}) ({nombre_2})", f"Solves ({nombre_2})"
+                if not tiene_comp2:
+                    resumen_medias = resumen_1.sort_index(ascending=False)
+                    total_solves_global = len(df_comp1)
+                    media_global = df_comp1["solves segundos"].mean()
 
-                tabla_comp_medias = pd.DataFrame({
-                    col_m1: resumen_1["media"],
-                    col_s1: resumen_1["total_solves"],
-                    col_m2: resumen_2["media"] if tiene_comp2 else None,
-                    col_s2: resumen_2["total_solves"] if tiene_comp2 else None,
-                }).sort_index(ascending=False)
+                    fila_total = pd.DataFrame(
+                        {"media": [round(media_global, 2)], "total_solves": [total_solves_global]},
+                        index=["Total General"],
+                    )
 
-                tabla_comp_medias.index = tabla_comp_medias.index.astype(str)
-                st.dataframe(tabla_comp_medias.reset_index().rename(columns={"index": "Año"}), hide_index=True, use_container_width=True)
+                    resumen_medias.index = resumen_medias.index.astype(str)
+                    resumen_completo = pd.concat([resumen_medias, fila_total]).reset_index()
+                    resumen_completo = resumen_completo.rename(
+                        columns={"index": "Año", "media": f"Media ({unidad_medida})", "total_solves": "Soluciones Totales"}
+                    )
+                    resumen_completo[f"Media ({unidad_medida})"] = resumen_completo[f"Media ({unidad_medida})"].apply(lambda x: f"{x:.2f}")
+                    st.dataframe(resumen_completo, hide_index=True, use_container_width=True)
+                else:
+                    col_m1, col_s1 = f"Media ({unidad_medida}) ({nombre_1})", f"Solves ({nombre_1})"
+                    col_m2, col_s2 = f"Media ({unidad_medida}) ({nombre_2})", f"Solves ({nombre_2})"
 
-            st.caption("📌 **Nota:** Esta gráfica y tabla muestran la media aritmética global de todos los resultados válidos registrados en competiciones oficiales de la WCA para este evento año a año.")
+                    tabla_comp_medias = pd.DataFrame({
+                        col_m1: resumen_1["media"],
+                        col_s1: resumen_1["total_solves"],
+                        col_m2: resumen_2["media"] if tiene_comp2 else None,
+                        col_s2: resumen_2["total_solves"] if tiene_comp2 else None,
+                    }).sort_index(ascending=False)
 
-    # ==================== PESTAÑA 2 ====================
-    with tab2:
-        val_def = 30.0 if evento_elegido == "333fm" else 10.0
-        limite_tiempo = st.number_input(
-            f"Introduce un límite en {unidad_medida} (ej. {val_def:.1f} para Sub-{val_def:.0f}):",
-            min_value=0.0, max_value=300.0, value=val_def, step=0.5,
-        )
+                    tabla_comp_medias.index = tabla_comp_medias.index.astype(str)
+                    st.dataframe(tabla_comp_medias.reset_index().rename(columns={"index": "Año"}), hide_index=True, use_container_width=True)
 
-        st.write(f"### ⏱️ Tasa de Solves Sub-{limite_tiempo:.2f} por Año")
+                st.caption("📌 **Nota:** Esta gráfica y tabla muestran la media aritmética global de todos los resultados válidos registrados en competiciones oficiales de la WCA para este evento año a año.")
 
-        def obtener_tasa_sub_x(df, limite):
-            if df.empty:
-                return pd.DataFrame()
-            df_temp = df.copy()
-            df_temp["es_sub_x"] = df_temp["solves segundos"] < limite
-            tasa = df_temp.groupby("año").agg(
-                solves_sub_x=("es_sub_x", "sum"), total_solves=("es_sub_x", "count")
+        # --- PESTAÑA 2 ---
+        with tab2:
+            val_def = 30.0 if evento_elegido == "333fm" else 10.0
+            limite_tiempo = st.number_input(
+                f"Introduce un límite en {unidad_medida} (ej. {val_def:.1f} para Sub-{val_def:.0f}):",
+                min_value=0.0, max_value=300.0, value=val_def, step=0.5,
             )
-            tasa["porcentaje"] = (tasa["solves_sub_x"] / tasa["total_solves"]) * 100
-            return tasa
 
-        if not df_comp1.empty:
-            tasa_1 = obtener_tasa_sub_x(df_comp1, limite_tiempo)
-            df_grafico_tasa = pd.DataFrame({f"{nombre_1}": tasa_1["porcentaje"]})
+            st.write(f"### ⏱️ Tasa de Solves Sub-{limite_tiempo:.2f} por Año")
 
-            if tiene_comp2 and not df_comp2.empty:
-                tasa_2 = obtener_tasa_sub_x(df_comp2, limite_tiempo)
-                df_grafico_tasa[f"{nombre_2}"] = tasa_2["porcentaje"]
+            def obtener_tasa_sub_x(df, limite):
+                if df.empty:
+                    return pd.DataFrame()
+                df_temp = df.copy()
+                df_temp["es_sub_x"] = df_temp["solves segundos"] < limite
+                tasa = df_temp.groupby("año").agg(
+                    solves_sub_x=("es_sub_x", "sum"), total_solves=("es_sub_x", "count")
+                )
+                tasa["porcentaje"] = (tasa["solves_sub_x"] / tasa["total_solves"]) * 100
+                return tasa
 
-            df_grafico_tasa_ordenado = df_grafico_tasa.sort_index(ascending=True)
-            df_grafico_tasa_ordenado.index = df_grafico_tasa_ordenado.index.astype(str)
+            if not df_comp1.empty:
+                tasa_1 = obtener_tasa_sub_x(df_comp1, limite_tiempo)
+                df_grafico_tasa = pd.DataFrame({f"{nombre_1}": tasa_1["porcentaje"]})
 
-            if tiene_comp2:
-                mostrar_grafico_lineas(df_grafico_tasa_ordenado, titulo_eje_y="Tasa (%)")
-            else:
-                st.line_chart(df_grafico_tasa_ordenado)
+                if tiene_comp2 and not df_comp2.empty:
+                    tasa_2 = obtener_tasa_sub_x(df_comp2, limite_tiempo)
+                    df_grafico_tasa[f"{nombre_2}"] = tasa_2["porcentaje"]
 
-            # --- VISTA ESTILO CAPTURA "TOTALES HISTÓRICOS" ---
-            st.write("### 🎯 Totales Históricos")
-            sub_1 = (df_comp1["solves segundos"] < limite_tiempo).sum()
-            total_1 = len(df_comp1)
-            pct_1 = (sub_1 / total_1 * 100) if total_1 > 0 else 0
+                df_grafico_tasa_ordenado = df_grafico_tasa.sort_index(ascending=True)
+                df_grafico_tasa_ordenado.index = df_grafico_tasa_ordenado.index.astype(str)
 
-            if tiene_comp2 and not df_comp2.empty:
-                sub_2 = (df_comp2["solves segundos"] < limite_tiempo).sum()
-                total_2 = len(df_comp2)
-                pct_2 = (sub_2 / total_2 * 100) if total_2 > 0 else 0
+                if tiene_comp2:
+                    mostrar_grafico_lineas(df_grafico_tasa_ordenado, titulo_eje_y="Tasa (%)")
+                else:
+                    st.line_chart(df_grafico_tasa_ordenado)
 
-                c1, c2 = st.columns(2)
-                with c1:
+                st.write("### 🎯 Totales Históricos")
+                sub_1 = (df_comp1["solves segundos"] < limite_tiempo).sum()
+                total_1 = len(df_comp1)
+                pct_1 = (sub_1 / total_1 * 100) if total_1 > 0 else 0
+
+                if tiene_comp2 and not df_comp2.empty:
+                    sub_2 = (df_comp2["solves segundos"] < limite_tiempo).sum()
+                    total_2 = len(df_comp2)
+                    pct_2 = (sub_2 / total_2 * 100) if total_2 > 0 else 0
+
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.caption(f"Competidor: {nombre_1}")
+                        st.markdown(f"## **{sub_1} / {total_1} ({pct_1:.2f}%)**")
+                    with c2:
+                        st.caption(f"Competidor: {nombre_2}")
+                        st.markdown(f"## **{sub_2} / {total_2} ({pct_2:.2f}%)**")
+                else:
                     st.caption(f"Competidor: {nombre_1}")
                     st.markdown(f"## **{sub_1} / {total_1} ({pct_1:.2f}%)**")
-                with c2:
-                    st.caption(f"Competidor: {nombre_2}")
-                    st.markdown(f"## **{sub_2} / {total_2} ({pct_2:.2f}%)**")
-            else:
-                st.caption(f"Competidor: {nombre_1}")
-                st.markdown(f"## **{sub_1} / {total_1} ({pct_1:.2f}%)**")
 
-            st.write("")
+                st.write("")
 
-            # --- TABLA DE TASA SUB-X CON COLORES ---
-            st.write("### 📋 Tabla de Tasa Sub-X por Año")
-            if not tiene_comp2:
-                tasa_tabla = tasa_1.sort_index(ascending=False).reset_index()
-                tasa_tabla.columns = ["Año", f"Solves Sub-{limite_tiempo:.2f}", "Solves Totales", "% Tasa"]
-                tasa_tabla["% Tasa"] = tasa_tabla["% Tasa"] / 100.0
-                
-                styled_df = tasa_tabla.style.format({"% Tasa": "{:.2%}"}).background_gradient(
-                    cmap="Blues", subset=["% Tasa"]
-                )
-                st.dataframe(styled_df, hide_index=True, use_container_width=True)
-            else:
-                tasa_tabla_comp = pd.DataFrame({
-                    f"Sub-{limite_tiempo:.2f} ({nombre_1})": tasa_1["solves_sub_x"],
-                    f"% ({nombre_1})": tasa_1["porcentaje"] / 100.0,
-                    f"Sub-{limite_tiempo:.2f} ({nombre_2})": tasa_2["solves_sub_x"] if tiene_comp2 else None,
-                    f"% ({nombre_2})": (tasa_2["porcentaje"] / 100.0) if tiene_comp2 else None,
-                }).sort_index(ascending=False).reset_index()
-                tasa_tabla_comp = tasa_tabla_comp.rename(columns={"año": "Año"})
+                st.write("### 📋 Tabla de Tasa Sub-X por Año")
+                if not tiene_comp2:
+                    tasa_tabla = tasa_1.sort_index(ascending=False).reset_index()
+                    tasa_tabla.columns = ["Año", f"Solves Sub-{limite_tiempo:.2f}", "Solves Totales", "% Tasa"]
+                    tasa_tabla["% Tasa"] = tasa_tabla["% Tasa"] / 100.0
+                    
+                    styled_df = tasa_tabla.style.format({"% Tasa": "{:.2%}"}).background_gradient(
+                        cmap="Blues", subset=["% Tasa"]
+                    )
+                    st.dataframe(styled_df, hide_index=True, use_container_width=True)
+                else:
+                    tasa_tabla_comp = pd.DataFrame({
+                        f"Sub-{limite_tiempo:.2f} ({nombre_1})": tasa_1["solves_sub_x"],
+                        f"% ({nombre_1})": tasa_1["porcentaje"] / 100.0,
+                        f"Sub-{limite_tiempo:.2f} ({nombre_2})": tasa_2["solves_sub_x"] if tiene_comp2 else None,
+                        f"% ({nombre_2})": (tasa_2["porcentaje"] / 100.0) if tiene_comp2 else None,
+                    }).sort_index(ascending=False).reset_index()
+                    tasa_tabla_comp = tasa_tabla_comp.rename(columns={"año": "Año"})
 
-                cols_pct = [f"% ({nombre_1})", f"% ({nombre_2})"]
-                styled_df = tasa_tabla_comp.style.format({c: "{:.2%}" for c in cols_pct}).background_gradient(
-                    cmap="Blues", subset=cols_pct
-                )
-                st.dataframe(styled_df, hide_index=True, use_container_width=True)
+                    cols_pct = [f"% ({nombre_1})", f"% ({nombre_2})"]
+                    styled_df = tasa_tabla_comp.style.format({c: "{:.2%}" for c in cols_pct}).background_gradient(
+                        cmap="Blues", subset=cols_pct
+                    )
+                    st.dataframe(styled_df, hide_index=True, use_container_width=True)
 
-            # --- DESPLEGABLE CON DETALLE DE SOLUCIONES SUB-X ---
-            with st.expander(f"🔍 Ver detalle de soluciones Sub-{limite_tiempo:.2f}"):
-                if tiene_comp2:
-                    col_det1, col_det2 = st.columns(2)
-                    with col_det1:
+                with st.expander(f"🔍 Ver detalle de soluciones Sub-{limite_tiempo:.2f}"):
+                    if tiene_comp2:
+                        col_det1, col_det2 = st.columns(2)
+                        with col_det1:
+                            st.write(f"**Soluciones Sub-{limite_tiempo:.2f} - {nombre_1}**")
+                            df_sub1 = df_comp1[df_comp1["solves segundos"] < limite_tiempo][["competición", "año", "ronda", "num_solve", "solves segundos"]].copy()
+                            df_sub1.columns = ["Competición", "Año", "Ronda", "Solve", f"Tiempo ({unidad_medida})"]
+                            df_sub1[f"Tiempo ({unidad_medida})"] = df_sub1[f"Tiempo ({unidad_medida})"].apply(lambda x: f"{x:.2f}")
+                            st.dataframe(df_sub1, hide_index=True, use_container_width=True)
+                        with col_det2:
+                            st.write(f"**Soluciones Sub-{limite_tiempo:.2f} - {nombre_2}**")
+                            df_sub2 = df_comp2[df_comp2["solves segundos"] < limite_tiempo][["competición", "año", "ronda", "num_solve", "solves segundos"]].copy()
+                            df_sub2.columns = ["Competición", "Año", "Ronda", "Solve", f"Tiempo ({unidad_medida})"]
+                            df_sub2[f"Tiempo ({unidad_medida})"] = df_sub2[f"Tiempo ({unidad_medida})"].apply(lambda x: f"{x:.2f}")
+                            st.dataframe(df_sub2, hide_index=True, use_container_width=True)
+                    else:
                         st.write(f"**Soluciones Sub-{limite_tiempo:.2f} - {nombre_1}**")
                         df_sub1 = df_comp1[df_comp1["solves segundos"] < limite_tiempo][["competición", "año", "ronda", "num_solve", "solves segundos"]].copy()
                         df_sub1.columns = ["Competición", "Año", "Ronda", "Solve", f"Tiempo ({unidad_medida})"]
                         df_sub1[f"Tiempo ({unidad_medida})"] = df_sub1[f"Tiempo ({unidad_medida})"].apply(lambda x: f"{x:.2f}")
                         st.dataframe(df_sub1, hide_index=True, use_container_width=True)
-                    with col_det2:
-                        st.write(f"**Soluciones Sub-{limite_tiempo:.2f} - {nombre_2}**")
-                        df_sub2 = df_comp2[df_comp2["solves segundos"] < limite_tiempo][["competición", "año", "ronda", "num_solve", "solves segundos"]].copy()
-                        df_sub2.columns = ["Competición", "Año", "Ronda", "Solve", f"Tiempo ({unidad_medida})"]
-                        df_sub2[f"Tiempo ({unidad_medida})"] = df_sub2[f"Tiempo ({unidad_medida})"].apply(lambda x: f"{x:.2f}")
-                        st.dataframe(df_sub2, hide_index=True, use_container_width=True)
+
+                st.caption("📌 **Nota:** El porcentaje representa la proporción de soluciones registradas por debajo del umbral indicado frente al total de soluciones en competiciones ese año.")
+
+        # --- PESTAÑA 3 ---
+        with tab3:
+            st.write("### ⚡ Actual y mejor media de N soluciones")
+
+            tamano_n = st.selectbox(
+                "Selecciona la cantidad de soluciones consecutivas a promediar (N):",
+                options=[5, 12, 25, 50, 100, 500, 1000], index=0,
+            )
+
+            def calcular_media_bloque(serie_tiempos):
+                if len(serie_tiempos) != tamano_n:
+                    return None
+                if tamano_n == 5:
+                    tiempos_ordenados = sorted(serie_tiempos)
+                    return sum(tiempos_ordenados[1:4]) / 3.0
                 else:
-                    st.write(f"**Soluciones Sub-{limite_tiempo:.2f} - {nombre_1}**")
-                    df_sub1 = df_comp1[df_comp1["solves segundos"] < limite_tiempo][["competición", "año", "ronda", "num_solve", "solves segundos"]].copy()
-                    df_sub1.columns = ["Competición", "Año", "Ronda", "Solve", f"Tiempo ({unidad_medida})"]
-                    df_sub1[f"Tiempo ({unidad_medida})"] = df_sub1[f"Tiempo ({unidad_medida})"].apply(lambda x: f"{x:.2f}")
-                    st.dataframe(df_sub1, hide_index=True, use_container_width=True)
+                    return serie_tiempos.mean()
 
-            st.caption("📌 **Nota:** El porcentaje representa la proporción de soluciones registradas por debajo del umbral indicado frente al total de soluciones en competiciones ese año.")
+            def obtener_metricas_aon(df, n):
+                if df.empty or len(df) < n:
+                    return None, None, None, None, None, None, len(df)
 
-    # ==================== PESTAÑA 3 ====================
-    with tab3:
-        st.write("### ⚡ Actual y mejor media de N soluciones")
+                df_recientes = df.head(n).copy()
+                media_actual = calcular_media_bloque(df_recientes["solves segundos"])
+                single_act = df_recientes["solves segundos"].min() if not df_recientes.empty else None
 
-        tamano_n = st.selectbox(
-            "Selecciona la cantidad de soluciones consecutivas a promediar (N):",
-            options=[5, 12, 25, 50, 100, 500, 1000], index=0,
-        )
+                df_cronologico = df.iloc[::-1].reset_index(drop=True)
+                mejor_media_historica = float("inf")
+                idx_mejor_bloque = -1
 
-        def calcular_media_bloque(serie_tiempos):
-            if len(serie_tiempos) != tamano_n:
-                return None
-            if tamano_n == 5:
-                tiempos_ordenados = sorted(serie_tiempos)
-                return sum(tiempos_ordenados[1:4]) / 3.0
-            else:
-                return serie_tiempos.mean()
+                for i in range(len(df_cronologico) - n + 1):
+                    bloque = df_cronologico.iloc[i : i + n]["solves segundos"]
+                    media_bloque = calcular_media_bloque(bloque)
+                    if media_bloque is not None and media_bloque < mejor_media_historica:
+                        mejor_media_historica = media_bloque
+                        idx_mejor_bloque = i
 
-        def obtener_metricas_aon(df, n):
-            if df.empty or len(df) < n:
-                return None, None, None, None, None, None, len(df)
+                if idx_mejor_bloque != -1:
+                    df_mejor_bloque = df_cronologico.iloc[idx_mejor_bloque : idx_mejor_bloque + n].copy()
+                    df_mejor_bloque = df_mejor_bloque.iloc[::-1].reset_index(drop=True)
+                    mejor_single_bloque = df_mejor_bloque["solves segundos"].min()
+                else:
+                    df_mejor_bloque = pd.DataFrame()
+                    mejor_media_historica = None
+                    mejor_single_bloque = None
 
-            df_recientes = df.head(n).copy()
-            media_actual = calcular_media_bloque(df_recientes["solves segundos"])
-            single_act = df_recientes["solves segundos"].min() if not df_recientes.empty else None
+                return media_actual, single_act, mejor_media_historica, mejor_single_bloque, df_recientes, df_mejor_bloque, len(df)
 
-            df_cronologico = df.iloc[::-1].reset_index(drop=True)
-            mejor_media_historica = float("inf")
-            idx_mejor_bloque = -1
+            def renderizar_tarjeta_aon_individual(titulo_tipo, media_val, single_val, n_val, es_mejor=False):
+                med_str = f"{media_val:.2f}{unidad_medida}" if media_val is not None else "N/A"
+                sgl_str = f"{single_val:.2f}{unidad_medida}" if single_val is not None else "N/A"
+                border_color = "#FFD700" if es_mejor else "#00B4D8"
+                glow_gradient = "linear-gradient(180deg, #FFE57F 0%, #D4AF37 100%)" if es_mejor else "linear-gradient(180deg, #90E0EF 0%, #00B4D8 100%)"
 
-            for i in range(len(df_cronologico) - n + 1):
-                bloque = df_cronologico.iloc[i : i + n]["solves segundos"]
-                media_bloque = calcular_media_bloque(bloque)
-                if media_bloque is not None and media_bloque < mejor_media_historica:
-                    mejor_media_historica = media_bloque
-                    idx_mejor_bloque = i
-
-            if idx_mejor_bloque != -1:
-                df_mejor_bloque = df_cronologico.iloc[idx_mejor_bloque : idx_mejor_bloque + n].copy()
-                df_mejor_bloque = df_mejor_bloque.iloc[::-1].reset_index(drop=True)
-                mejor_single_bloque = df_mejor_bloque["solves segundos"].min()
-            else:
-                df_mejor_bloque = pd.DataFrame()
-                mejor_media_historica = None
-                mejor_single_bloque = None
-
-            return media_actual, single_act, mejor_media_historica, mejor_single_bloque, df_recientes, df_mejor_bloque, len(df)
-
-        def renderizar_tarjeta_aon_individual(titulo_tipo, media_val, single_val, n_val, es_mejor=False):
-            med_str = f"{media_val:.2f}{unidad_medida}" if media_val is not None else "N/A"
-            sgl_str = f"{single_val:.2f}{unidad_medida}" if single_val is not None else "N/A"
-            border_color = "#FFD700" if es_mejor else "#00B4D8"
-            glow_gradient = "linear-gradient(180deg, #FFE57F 0%, #D4AF37 100%)" if es_mejor else "linear-gradient(180deg, #90E0EF 0%, #00B4D8 100%)"
-
-            st.markdown(f"""
-            <div style="background: radial-gradient(circle at top left, #1A1A1A 0%, #0D0D0D 100%); border: 1px solid #333333; border-left: 5px solid {border_color}; border-radius: 12px; padding: 18px 22px; margin-bottom: 16px; box-shadow: 0 6px 20px rgba(0,0,0,0.6); color: white;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <span style="font-size: 12px; font-weight: 800; color: {border_color}; letter-spacing: 1.5px; text-transform: uppercase;">
-                            {titulo_tipo} (Ao{n_val})
-                        </span>
-                        <div style="font-size: 13px; color: #A0A0A0; margin-top: 6px;">
-                            Mejor Single del bloque: <b style="color: #FFFFFF;">{sgl_str}</b>
+                st.markdown(f"""
+                <div style="background: radial-gradient(circle at top left, #1A1A1A 0%, #0D0D0D 100%); border: 1px solid #333333; border-left: 5px solid {border_color}; border-radius: 12px; padding: 18px 22px; margin-bottom: 16px; box-shadow: 0 6px 20px rgba(0,0,0,0.6); color: white;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <span style="font-size: 12px; font-weight: 800; color: {border_color}; letter-spacing: 1.5px; text-transform: uppercase;">
+                                {titulo_tipo} (Ao{n_val})
+                            </span>
+                            <div style="font-size: 13px; color: #A0A0A0; margin-top: 6px;">
+                                Mejor Single del bloque: <b style="color: #FFFFFF;">{sgl_str}</b>
+                            </div>
                         </div>
-                    </div>
-                    <div style="text-align: right;">
-                        <div style="font-size: 10px; color: #A0A0A0; letter-spacing: 1.2px; text-transform: uppercase; font-weight: 600;">Media</div>
-                        <div style="font-size: 32px; font-weight: 900; background: {glow_gradient}; -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
-                            {med_str}
+                        <div style="text-align: right;">
+                            <div style="font-size: 10px; color: #A0A0A0; letter-spacing: 1.2px; text-transform: uppercase; font-weight: 600;">Media</div>
+                            <div style="font-size: 32px; font-weight: 900; background: {glow_gradient}; -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                                {med_str}
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
-            """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
 
-        def mostrar_tabla_solves(df_bloque, titulo):
-            if df_bloque is not None and not df_bloque.empty:
-                with st.expander(f"📋 {titulo}"):
-                    tabla_fmt = df_bloque[["competición", "año", "ronda", "num_solve", "solves segundos"]].copy()
-                    tabla_fmt.columns = ["Competición", "Año", "Ronda", "Solve", f"Tiempo ({unidad_medida})"]
-                    tabla_fmt[f"Tiempo ({unidad_medida})"] = tabla_fmt[f"Tiempo ({unidad_medida})"].apply(lambda x: f"{x:.2f}")
-                    st.dataframe(tabla_fmt, hide_index=True, use_container_width=True)
+            def mostrar_tabla_solves(df_bloque, titulo):
+                if df_bloque is not None and not df_bloque.empty:
+                    with st.expander(f"📋 {titulo}"):
+                        tabla_fmt = df_bloque[["competición", "año", "ronda", "num_solve", "solves segundos"]].copy()
+                        tabla_fmt.columns = ["Competición", "Año", "Ronda", "Solve", f"Tiempo ({unidad_medida})"]
+                        tabla_fmt[f"Tiempo ({unidad_medida})"] = tabla_fmt[f"Tiempo ({unidad_medida})"].apply(lambda x: f"{x:.2f}")
+                        st.dataframe(tabla_fmt, hide_index=True, use_container_width=True)
 
-        def procesar_y_mostrar_bloque_competidor(nombre_target, df_target, n_val, mostrar_cabecera=True):
-            med_act, sgl_act, mej_med, mej_sgl, df_rec, df_mej, tot_solves = obtener_metricas_aon(df_target, n_val)
-            
-            if tot_solves < n_val:
-                st.warning(f"**{nombre_target}** necesita al menos {n_val} soluciones (tiene {tot_solves}).")
-                return None
-            else:
-                if mostrar_cabecera:
-                    st.subheader(f"Competidor: {nombre_target}")
+            def procesar_y_mostrar_bloque_competidor(nombre_target, df_target, n_val, mostrar_cabecera=True):
+                med_act, sgl_act, mej_med, mej_sgl, df_rec, df_mej, tot_solves = obtener_metricas_aon(df_target, n_val)
                 
-                renderizar_tarjeta_aon_individual("Media Actual", med_act, sgl_act, n_val, es_mejor=False)
-                mostrar_tabla_solves(df_rec, f"Tiempos de la Media Actual (Últimas {n_val})")
+                if tot_solves < n_val:
+                    st.warning(f"**{nombre_target}** necesita al menos {n_val} soluciones (tiene {tot_solves}).")
+                    return None
+                else:
+                    if mostrar_cabecera:
+                        st.subheader(f"Competidor: {nombre_target}")
+                    
+                    renderizar_tarjeta_aon_individual("Media Actual", med_act, sgl_act, n_val, es_mejor=False)
+                    mostrar_tabla_solves(df_rec, f"Tiempos de la Media Actual (Últimas {n_val})")
 
-                renderizar_tarjeta_aon_individual("🏆 Mejor Media Histórica", mej_med, mej_sgl, n_val, es_mejor=True)
-                mostrar_tabla_solves(df_mej, f"Tiempos de la Mejor Media (Ao{n_val})")
-                
-                return {
-                    "med_act": med_act, "sgl_act": sgl_act,
-                    "mej_med": mej_med, "mej_sgl": mej_sgl
-                }
-
-        if tiene_comp2:
-            col_aon1, col_aon2 = st.columns(2)
-            with col_aon1:
-                m1 = procesar_y_mostrar_bloque_competidor(nombre_1, df_comp1, tamano_n, mostrar_cabecera=True)
-            with col_aon2:
-                m2 = procesar_y_mostrar_bloque_competidor(nombre_2, df_comp2, tamano_n, mostrar_cabecera=True)
-
-            if m1 and m2:
-                st.markdown("---")
-                st.write("### ⚔️ Tabla Comparativa Directa")
-                df_comp_directa = pd.DataFrame({
-                    "Métrica": [f"Media Actual (Ao{tamano_n})", "Mejor Single (Media Actual)", f"Mejor Media Histórica (Ao{tamano_n})", "Mejor Single (Mejor Media)"],
-                    f"{nombre_1}": [f"{m1['med_act']:.2f}{unidad_medida}", f"{m1['sgl_act']:.2f}{unidad_medida}", f"{m1['mej_med']:.2f}{unidad_medida}", f"{m1['mej_sgl']:.2f}{unidad_medida}"],
-                    f"{nombre_2}": [f"{m2['med_act']:.2f}{unidad_medida}", f"{m2['sgl_act']:.2f}{unidad_medida}", f"{m2['mej_med']:.2f}{unidad_medida}", f"{m2['mej_sgl']:.2f}{unidad_medida}"],
-                })
-                st.dataframe(df_comp_directa, hide_index=True, use_container_width=True)
-        else:
-            procesar_y_mostrar_bloque_competidor(nombre_1, df_comp1, tamano_n, mostrar_cabecera=False)
-
-        st.caption("📌 **Nota:** Para el cálculo de Ao5 se descartan el mejor y peor tiempo según la normativa WCA. Para N > 5 se utiliza la media aritmética simple del bloque consecutivo de N soluciones.")
-
-    # ==================== PESTAÑA 4 ====================
-    with tab4:
-        st.write("### 📈 Coeficiente de Variación (%)")
-        
-        def calcular_variabilidad_anual(df):
-            if df.empty:
-                return pd.DataFrame()
-            resumen = df.groupby("año")["solves segundos"].agg(
-                media="mean", desviacion="std", varianza="var", solves_totales="count"
-            )
-            resumen["cv_porcentaje"] = (resumen["desviacion"] / resumen["media"]) * 100
-            return resumen
-
-        if not df_comp1.empty:
-            var_1 = calcular_variabilidad_anual(df_comp1)
-            df_grafico_var = pd.DataFrame({f"{nombre_1}": var_1["cv_porcentaje"]})
-
-            if tiene_comp2 and not df_comp2.empty:
-                var_2 = calcular_variabilidad_anual(df_comp2)
-                df_grafico_var[f"{nombre_2}"] = var_2["cv_porcentaje"]
-
-            df_grafico_var_ordenado = df_grafico_var.sort_index(ascending=True)
-            df_grafico_var_ordenado.index = df_grafico_var_ordenado.index.astype(str)
+                    renderizar_tarjeta_aon_individual("🏆 Mejor Media Histórica", mej_med, mej_sgl, n_val, es_mejor=True)
+                    mostrar_tabla_solves(df_mej, f"Tiempos de la Mejor Media (Ao{n_val})")
+                    
+                    return {
+                        "med_act": med_act, "sgl_act": sgl_act,
+                        "mej_med": mej_med, "mej_sgl": mej_sgl
+                    }
 
             if tiene_comp2:
-                mostrar_grafico_lineas(df_grafico_var_ordenado, titulo_eje_y="Coef. Variación (%)")
+                col_aon1, col_aon2 = st.columns(2)
+                with col_aon1:
+                    m1 = procesar_y_mostrar_bloque_competidor(nombre_1, df_comp1, tamano_n, mostrar_cabecera=True)
+                with col_aon2:
+                    m2 = procesar_y_mostrar_bloque_competidor(nombre_2, df_comp2, tamano_n, mostrar_cabecera=True)
+
+                if m1 and m2:
+                    st.markdown("---")
+                    st.write("### ⚔️ Tabla Comparativa Directa")
+                    df_comp_directa = pd.DataFrame({
+                        "Métrica": [f"Media Actual (Ao{tamano_n})", "Mejor Single (Media Actual)", f"Mejor Media Histórica (Ao{tamano_n})", "Mejor Single (Mejor Media)"],
+                        f"{nombre_1}": [f"{m1['med_act']:.2f}{unidad_medida}", f"{m1['sgl_act']:.2f}{unidad_medida}", f"{m1['mej_med']:.2f}{unidad_medida}", f"{m1['mej_sgl']:.2f}{unidad_medida}"],
+                        f"{nombre_2}": [f"{m2['med_act']:.2f}{unidad_medida}", f"{m2['sgl_act']:.2f}{unidad_medida}", f"{m2['mej_med']:.2f}{unidad_medida}", f"{m2['mej_sgl']:.2f}{unidad_medida}"],
+                    })
+                    st.dataframe(df_comp_directa, hide_index=True, use_container_width=True)
             else:
-                st.line_chart(df_grafico_var_ordenado)
+                procesar_y_mostrar_bloque_competidor(nombre_1, df_comp1, tamano_n, mostrar_cabecera=False)
 
-            st.write("### 📋 Resumen de Variabilidad Anual")
-            if not tiene_comp2:
-                tabla_var = var_1.sort_index(ascending=False).reset_index()
-                tabla_var.columns = ["Año", f"Media ({unidad_medida})", "Desviación Estándar", "Varianza", "Solves Totales", "Coef. Variación (%)"]
-                tabla_var[f"Media ({unidad_medida})"] = tabla_var[f"Media ({unidad_medida})"].apply(lambda x: f"{x:.2f}")
-                tabla_var["Desviación Estándar"] = tabla_var["Desviación Estándar"].apply(lambda x: f"{x:.2f}")
-                tabla_var["Varianza"] = tabla_var["Varianza"].apply(lambda x: f"{x:.2f}")
-                tabla_var["Coef. Variación (%)"] = tabla_var["Coef. Variación (%)"].apply(lambda x: f"{x:.2f}%")
-                st.dataframe(tabla_var, hide_index=True, use_container_width=True)
+            st.caption("📌 **Nota:** Para el cálculo de Ao5 se descartan el mejor y peor tiempo según la normativa WCA. Para N > 5 se utiliza la media aritmética simple del bloque consecutivo de N soluciones.")
+
+        # --- PESTAÑA 4 ---
+        with tab4:
+            st.write("### 📈 Coeficiente de Variación (%)")
+            
+            def calcular_variabilidad_anual(df):
+                if df.empty:
+                    return pd.DataFrame()
+                resumen = df.groupby("año")["solves segundos"].agg(
+                    media="mean", desviacion="std", varianza="var", solves_totales="count"
+                )
+                resumen["cv_porcentaje"] = (resumen["desviacion"] / resumen["media"]) * 100
+                return resumen
+
+            if not df_comp1.empty:
+                var_1 = calcular_variabilidad_anual(df_comp1)
+                df_grafico_var = pd.DataFrame({f"{nombre_1}": var_1["cv_porcentaje"]})
+
+                if tiene_comp2 and not df_comp2.empty:
+                    var_2 = calcular_variabilidad_anual(df_comp2)
+                    df_grafico_var[f"{nombre_2}"] = var_2["cv_porcentaje"]
+
+                df_grafico_var_ordenado = df_grafico_var.sort_index(ascending=True)
+                df_grafico_var_ordenado.index = df_grafico_var_ordenado.index.astype(str)
+
+                if tiene_comp2:
+                    mostrar_grafico_lineas(df_grafico_var_ordenado, titulo_eje_y="Coef. Variación (%)")
+                else:
+                    st.line_chart(df_grafico_var_ordenado)
+
+                st.write("### 📋 Resumen de Variabilidad Anual")
+                if not tiene_comp2:
+                    tabla_var = var_1.sort_index(ascending=False).reset_index()
+                    tabla_var.columns = ["Año", f"Media ({unidad_medida})", "Desviación Estándar", "Varianza", "Solves Totales", "Coef. Variación (%)"]
+                    tabla_var[f"Media ({unidad_medida})"] = tabla_var[f"Media ({unidad_medida})"].apply(lambda x: f"{x:.2f}")
+                    tabla_var["Desviación Estándar"] = tabla_var["Desviación Estándar"].apply(lambda x: f"{x:.2f}")
+                    tabla_var["Varianza"] = tabla_var["Varianza"].apply(lambda x: f"{x:.2f}")
+                    tabla_var["Coef. Variación (%)"] = tabla_var["Coef. Variación (%)"].apply(lambda x: f"{x:.2f}%")
+                    st.dataframe(tabla_var, hide_index=True, use_container_width=True)
+                else:
+                    tabla_var_comp = pd.DataFrame({
+                        f"CV% ({nombre_1})": var_1["cv_porcentaje"],
+                        f"Desv.Std ({nombre_1})": var_1["desviacion"],
+                        f"CV% ({nombre_2})": var_2["cv_porcentaje"] if tiene_comp2 else None,
+                        f"Desv.Std ({nombre_2})": var_2["desviacion"] if tiene_comp2 else None,
+                    }).sort_index(ascending=False).reset_index()
+                    tabla_var_comp = tabla_var_comp.rename(columns={"año": "Año"})
+                    st.dataframe(tabla_var_comp, hide_index=True, use_container_width=True)
+
+                st.caption("📌 **Nota:** El Coeficiente de Variación (CV) mide la dispersión relativa de los tiempos. Un valor menor indica mayor consistencia en los resultados.")
+
+        # --- PESTAÑA 5 ---
+        with tab5:
+            st.write(f"### 🏆 Posición y Percentil Mundial ({NOMBRES_EVENTOS.get(evento_elegido, evento_elegido)})")
+
+            filtro_top = st.radio(
+                "👁️ Mostrar categoría:",
+                options=["Ambos", "Average", "Single"],
+                horizontal=True,
+                key="filtro_top_mundial"
+            )
+
+            def renderizar_tarjetas_top(wca_id_target, nombre_target, mostrar_cabecera=True, filtro="Ambos"):
+                url_person = f"https://raw.githubusercontent.com/robiningelbrecht/wca-rest-api/refs/heads/v1/persons/{wca_id_target}.json"
+                resp = requests.get(url_person)
+
+                if resp.status_code == 200:
+                    data = resp.json()
+                    df_avg = pd.json_normalize(data, record_path=["rank", "averages"], meta="name") if "rank" in data and "averages" in data["rank"] else pd.DataFrame()
+                    df_sgl = pd.json_normalize(data, record_path=["rank", "singles"], meta="name") if "rank" in data and "singles" in data["rank"] else pd.DataFrame()
+
+                    if mostrar_cabecera:
+                        st.subheader(f"Competidor: {nombre_target}")
+
+                    # Average
+                    if filtro in ["Ambos", "Average"]:
+                        fila_avg = df_avg[df_avg["eventId"] == evento_elegido] if not df_avg.empty else pd.DataFrame()
+                        if not fila_avg.empty:
+                            url_t_avg = f"https://raw.githubusercontent.com/robiningelbrecht/wca-rest-api/refs/heads/v1/rank/world/average/{evento_elegido}.json"
+                            tot_avg = requests.get(url_t_avg).json()["total"]
+                            rk_avg = fila_avg["rank.world"].values[0]
+                            val_avg_raw = fila_avg['best'].values[0]
+                            val_avg_fmt = f"{val_avg_raw}{unidad_medida}" if evento_elegido == "333fm" else f"{val_avg_raw / 100:.2f}s".replace(".", ",")
+                            top_avg_fmt = f"{(rk_avg / tot_avg):.3%}".replace(".", ",")
+
+                            st.markdown(f"""
+                            <div style="background: radial-gradient(circle at top left, #1A1A1A 0%, #0D0D0D 100%); border: 1px solid #D4AF37; border-left: 5px solid #FFD700; border-radius: 12px; padding: 16px 22px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 6px 20px rgba(0,0,0,0.6); color: white; margin-bottom: 16px;">
+                                <div style="display: flex; flex-direction: column; gap: 4px;">
+                                    <span style="font-size: 13px; font-weight: 800; color: #D4AF37; letter-spacing: 1.5px; text-transform: uppercase;">Average</span>
+                                    <div style="font-size: 14px; color: #E0E0E0;">Tiempo: <b style="color: #FFFFFF;">{val_avg_fmt}</b> <span style="color: #D4AF37; margin: 0 6px;">|</span> Rank: <b style="color: #FFFFFF;">#{rk_avg:,}</b></div>
+                                    <div style="font-size: 12px; color: #A0A0A0;">Total competidores: <span style="color: #FFFFFF;">{tot_avg:,}</span></div>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div style="font-size: 10px; color: #D4AF37; letter-spacing: 1.2px; text-transform: uppercase; font-weight: 600;">Top Mundial</div>
+                                    <div style="font-size: 34px; font-weight: 900; background: linear-gradient(180deg, #FFE57F 0%, #D4AF37 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">{top_avg_fmt}</div>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        else:
+                            st.info(f"Sin registro de Average en {NOMBRES_EVENTOS.get(evento_elegido, evento_elegido)}.")
+
+                    # Single
+                    if filtro in ["Ambos", "Single"]:
+                        fila_sgl = df_sgl[df_sgl["eventId"] == evento_elegido] if not df_sgl.empty else pd.DataFrame()
+                        if not fila_sgl.empty:
+                            url_t_sgl = f"https://raw.githubusercontent.com/robiningelbrecht/wca-rest-api/refs/heads/v1/rank/world/single/{evento_elegido}.json"
+                            tot_sgl = requests.get(url_t_sgl).json()["total"]
+                            rk_sgl = fila_sgl["rank.world"].values[0]
+                            val_sgl_raw = fila_sgl['best'].values[0]
+                            val_sgl_fmt = f"{val_sgl_raw}{unidad_medida}" if evento_elegido == "333fm" else f"{val_sgl_raw / 100:.2f}s".replace(".", ",")
+                            top_sgl_fmt = f"{(rk_sgl / tot_sgl):.3%}".replace(".", ",")
+
+                            st.markdown(f"""
+                            <div style="background: radial-gradient(circle at top left, #1A1A1A 0%, #0D0D0D 100%); border: 1px solid #D4AF37; border-left: 5px solid #FFD700; border-radius: 12px; padding: 16px 22px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 6px 20px rgba(0,0,0,0.6); color: white; margin-bottom: 16px;">
+                                <div style="display: flex; flex-direction: column; gap: 4px;">
+                                    <span style="font-size: 13px; font-weight: 800; color: #D4AF37; letter-spacing: 1.5px; text-transform: uppercase;">Single</span>
+                                    <div style="font-size: 14px; color: #E0E0E0;">Tiempo: <b style="color: #FFFFFF;">{val_sgl_fmt}</b> <span style="color: #D4AF37; margin: 0 6px;">|</span> Rank: <b style="color: #FFFFFF;">#{rk_sgl:,}</b></div>
+                                    <div style="font-size: 12px; color: #A0A0A0;">Total competidores: <span style="color: #FFFFFF;">{tot_sgl:,}</span></div>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div style="font-size: 10px; color: #D4AF37; letter-spacing: 1.2px; text-transform: uppercase; font-weight: 600;">Top Mundial</div>
+                                    <div style="font-size: 34px; font-weight: 900; background: linear-gradient(180deg, #FFE57F 0%, #D4AF37 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">{top_sgl_fmt}</div>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        else:
+                            st.info(f"Sin registro de Single en {NOMBRES_EVENTOS.get(evento_elegido, evento_elegido)}.")
+
+            if tiene_comp2:
+                col_t1, col_t2 = st.columns(2)
+                with col_t1:
+                    renderizar_tarjetas_top(wca_id_1, nombre_1, mostrar_cabecera=True, filtro=filtro_top)
+                with col_t2:
+                    renderizar_tarjetas_top(wca_id_2, nombre_2, mostrar_cabecera=True, filtro=filtro_top)
             else:
-                tabla_var_comp = pd.DataFrame({
-                    f"CV% ({nombre_1})": var_1["cv_porcentaje"],
-                    f"Desv.Std ({nombre_1})": var_1["desviacion"],
-                    f"CV% ({nombre_2})": var_2["cv_porcentaje"] if tiene_comp2 else None,
-                    f"Desv.Std ({nombre_2})": var_2["desviacion"] if tiene_comp2 else None,
-                }).sort_index(ascending=False).reset_index()
-                tabla_var_comp = tabla_var_comp.rename(columns={"año": "Año"})
-                st.dataframe(tabla_var_comp, hide_index=True, use_container_width=True)
+                renderizar_tarjetas_top(wca_id_1, nombre_1, mostrar_cabecera=False, filtro=filtro_top)
 
-            st.caption("📌 **Nota:** El Coeficiente de Variación (CV) mide la dispersión relativa de los tiempos. Un valor menor indica mayor consistencia en los resultados.")
+            st.caption("📌 **Nota:** Posición en el ranking mundial oficial WCA y percentil relativo respecto al número total de competidores con registro en este evento.")
 
-    # ==================== PESTAÑA 5: TOP MUNDIAL ====================
-    with tab5:
-        st.write(f"### 🏆 Posición y Percentil Mundial ({NOMBRES_EVENTOS.get(evento_elegido, evento_elegido)})")
+# ==================== VISTA 2: SALÓN DE LOGROS (3x3x3) ====================
+elif seccion_principal == "🎖️ Salón de Logros (3x3x3)":
+    st.write("## 🎖️ Salón de Logros")
 
-        def renderizar_tarjetas_top(wca_id_target, nombre_target, mostrar_cabecera=True):
-            url_person = f"https://raw.githubusercontent.com/robiningelbrecht/wca-rest-api/refs/heads/v1/persons/{wca_id_target}.json"
-            resp = requests.get(url_person)
+    # Definición de los 10 logros unificados con los nombres de los minerales
+    LOGROS_UNIFICADOS = [
+        {"id": 1, "mineral": "Bronce", "color": "#CD7F32", "archivo": "Medalla_Bronce", "req_avg": 60.0, "req_sgl": 50.0, "titulo": "Iniciación"},
+        {"id": 2, "mineral": "Hierro", "color": "#A1A1A1", "archivo": "Medalla_Hierro", "req_avg": 30.0, "req_sgl": 25.0, "titulo": "Principiante"},
+        {"id": 3, "mineral": "Plata", "color": "#C0C0C0", "archivo": "Medalla_Plata", "req_avg": 20.0, "req_sgl": 15.0, "titulo": "Intermedio"},
+        {"id": 4, "mineral": "Oro", "color": "#FFD700", "archivo": "Medalla_Oro", "req_avg": 15.0, "req_sgl": 12.0, "titulo": "Avanzado"},
+        {"id": 5, "mineral": "Zafiro", "color": "#0F52BA", "archivo": "Medalla_Zafiro", "req_avg": 10.0, "req_sgl": 8.0, "titulo": "Experto"},
+        {"id": 6, "mineral": "Esmeralda", "color": "#50C878", "archivo": "Medalla_Esmeralda2", "req_avg": 9.0, "req_sgl": 7.0, "titulo": "Maestro"},
+        {"id": 7, "mineral": "Rubí", "color": "#E0115F", "archivo": "Medalla_Rubi", "req_avg": 8.0, "req_sgl": 6.0, "titulo": "Elite"},
+        {"id": 8, "mineral": "Amatista", "color": "#9966CC", "archivo": "Medalla_Amatista", "req_avg": 7.0, "req_sgl": 5.0, "titulo": "Leyenda"},
+        {"id": 9, "mineral": "Obsidiana", "color": "#B432E6", "archivo": "Medalla_Obsidiana", "req_avg": 6.0, "req_sgl": 4.5, "titulo": "Mítico"},
+        {"id": 10, "mineral": "Alexandrita", "color": "#FF007F", "archivo": "Medalla_Alexandrita", "req_avg": 5.0, "req_sgl": 4.0, "titulo": "Dios del Cubo"},
+    ]
 
-            if resp.status_code == 200:
-                data = resp.json()
-                df_avg = pd.json_normalize(data, record_path=["rank", "averages"], meta="name") if "rank" in data and "averages" in data["rank"] else pd.DataFrame()
-                df_sgl = pd.json_normalize(data, record_path=["rank", "singles"], meta="name") if "rank" in data and "singles" in data["rank"] else pd.DataFrame()
+    def obtener_imagen_base64(nombre_archivo):
+        directorio = os.path.join("LOGOS LOGROS", "Medallas claude", "Definitivas")
+        extensiones = [".png", ".jpg", ".jpeg", ".webp"]
+        
+        for ext in extensiones:
+            ruta = os.path.join(directorio, f"{nombre_archivo}{ext}")
+            if os.path.exists(ruta):
+                try:
+                    with open(ruta, "rb") as f:
+                        data = f.read()
+                        encoded = base64.b64encode(data).decode()
+                        mime = "image/png" if ext == ".png" else "image/jpeg"
+                        return f"data:{mime};base64,{encoded}"
+                except Exception:
+                    pass
+        return None
 
-                if mostrar_cabecera:
-                    st.subheader(f"Competidor: {nombre_target}")
-
-                # --- AVERAGE ---
-                fila_avg = df_avg[df_avg["eventId"] == evento_elegido] if not df_avg.empty else pd.DataFrame()
-                if not fila_avg.empty:
-                    url_t_avg = f"https://raw.githubusercontent.com/robiningelbrecht/wca-rest-api/refs/heads/v1/rank/world/average/{evento_elegido}.json"
-                    tot_avg = requests.get(url_t_avg).json()["total"]
-                    rk_avg = fila_avg["rank.world"].values[0]
-                    val_avg_raw = fila_avg['best'].values[0]
-                    val_avg_fmt = f"{val_avg_raw}{unidad_medida}" if evento_elegido == "333fm" else f"{val_avg_raw / 100:.2f}s".replace(".", ",")
-                    top_avg_fmt = f"{(rk_avg / tot_avg):.3%}".replace(".", ",")
-
-                    st.markdown(f"""
-                    <div style="background: radial-gradient(circle at top left, #1A1A1A 0%, #0D0D0D 100%); border: 1px solid #D4AF37; border-left: 5px solid #FFD700; border-radius: 12px; padding: 16px 22px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 6px 20px rgba(0,0,0,0.6); color: white; margin-bottom: 16px;">
-                        <div style="display: flex; flex-direction: column; gap: 4px;">
-                            <span style="font-size: 13px; font-weight: 800; color: #D4AF37; letter-spacing: 1.5px; text-transform: uppercase;">Average</span>
-                            <div style="font-size: 14px; color: #E0E0E0;">Tiempo: <b style="color: #FFFFFF;">{val_avg_fmt}</b> <span style="color: #D4AF37; margin: 0 6px;">|</span> Rank: <b style="color: #FFFFFF;">#{rk_avg:,}</b></div>
-                            <div style="font-size: 12px; color: #A0A0A0;">Total competidores: <span style="color: #FFFFFF;">{tot_avg:,}</span></div>
-                        </div>
-                        <div style="text-align: right;">
-                            <div style="font-size: 10px; color: #D4AF37; letter-spacing: 1.2px; text-transform: uppercase; font-weight: 600;">Top Mundial</div>
-                            <div style="font-size: 34px; font-weight: 900; background: linear-gradient(180deg, #FFE57F 0%, #D4AF37 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">{top_avg_fmt}</div>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                else:
-                    st.info(f"Sin registro de Average en {NOMBRES_EVENTOS.get(evento_elegido, evento_elegido)}.")
-
-                # --- SINGLE ---
-                fila_sgl = df_sgl[df_sgl["eventId"] == evento_elegido] if not df_sgl.empty else pd.DataFrame()
-                if not fila_sgl.empty:
-                    url_t_sgl = f"https://raw.githubusercontent.com/robiningelbrecht/wca-rest-api/refs/heads/v1/rank/world/single/{evento_elegido}.json"
-                    tot_sgl = requests.get(url_t_sgl).json()["total"]
-                    rk_sgl = fila_sgl["rank.world"].values[0]
-                    val_sgl_raw = fila_sgl['best'].values[0]
-                    val_sgl_fmt = f"{val_sgl_raw}{unidad_medida}" if evento_elegido == "333fm" else f"{val_sgl_raw / 100:.2f}s".replace(".", ",")
-                    top_sgl_fmt = f"{(rk_sgl / tot_sgl):.3%}".replace(".", ",")
-
-                    st.markdown(f"""
-                    <div style="background: radial-gradient(circle at top left, #1A1A1A 0%, #0D0D0D 100%); border: 1px solid #D4AF37; border-left: 5px solid #FFD700; border-radius: 12px; padding: 16px 22px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 6px 20px rgba(0,0,0,0.6); color: white; margin-bottom: 16px;">
-                        <div style="display: flex; flex-direction: column; gap: 4px;">
-                            <span style="font-size: 13px; font-weight: 800; color: #D4AF37; letter-spacing: 1.5px; text-transform: uppercase;">Single</span>
-                            <div style="font-size: 14px; color: #E0E0E0;">Tiempo: <b style="color: #FFFFFF;">{val_sgl_fmt}</b> <span style="color: #D4AF37; margin: 0 6px;">|</span> Rank: <b style="color: #FFFFFF;">#{rk_sgl:,}</b></div>
-                            <div style="font-size: 12px; color: #A0A0A0;">Total competidores: <span style="color: #FFFFFF;">{tot_sgl:,}</span></div>
-                        </div>
-                        <div style="text-align: right;">
-                            <div style="font-size: 10px; color: #D4AF37; letter-spacing: 1.2px; text-transform: uppercase; font-weight: 600;">Top Mundial</div>
-                            <div style="font-size: 34px; font-weight: 900; background: linear-gradient(180deg, #FFE57F 0%, #D4AF37 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">{top_sgl_fmt}</div>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                else:
-                    st.info(f"Sin registro de Single en {NOMBRES_EVENTOS.get(evento_elegido, evento_elegido)}.")
-
-        if tiene_comp2:
-            col_t1, col_t2 = st.columns(2)
-            with col_t1:
-                renderizar_tarjetas_top(wca_id_1, nombre_1, mostrar_cabecera=True)
-            with col_t2:
-                renderizar_tarjetas_top(wca_id_2, nombre_2, mostrar_cabecera=True)
+    def renderizar_imagen_logro_html(nombre_archivo, color="#FFD700", desbloqueado=True):
+        img_b64 = obtener_imagen_base64(nombre_archivo)
+        opacity = "1.0" if desbloqueado else "0.2"
+        grayscale = "" if desbloqueado else "filter: grayscale(100%);"
+        
+        if img_b64:
+            return f'<div style="width: 110px; height: 110px; margin: 0 auto; display: flex; align-items: center; justify-content: center;"><img src="{img_b64}" style="max-width: 100%; max-height: 100%; opacity: {opacity}; {grayscale}" /></div>'
         else:
-            renderizar_tarjetas_top(wca_id_1, nombre_1, mostrar_cabecera=False)
+            return f'<div style="width: 80px; height: 80px; margin: 10px auto; border-radius: 50%; background: {color}; opacity: {opacity}; display: flex; align-items: center; justify-content: center; font-size: 28px;">🏅</div>'
 
-        st.caption("📌 **Nota:** Posición en el ranking mundial oficial WCA y percentil relativo respecto al número total de competidores con registro en este evento.")
+    def obtener_marcas_oficiales_wca(wca_id_target):
+        if not wca_id_target:
+            return None, None
+        url = f"https://raw.githubusercontent.com/robiningelbrecht/wca-rest-api/refs/heads/v1/persons/{wca_id_target}.json"
+        try:
+            r = requests.get(url, timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                df_avg = pd.json_normalize(data, record_path=["rank", "averages"]) if "rank" in data and "averages" in data["rank"] else pd.DataFrame()
+                df_sgl = pd.json_normalize(data, record_path=["rank", "singles"]) if "rank" in data and "singles" in data["rank"] else pd.DataFrame()
+
+                best_single = None
+                best_average = None
+
+                if not df_sgl.empty:
+                    fila_s = df_sgl[df_sgl["eventId"] == "333"]
+                    if not fila_s.empty:
+                        best_single = fila_s["best"].values[0] / 100.0
+
+                if not df_avg.empty:
+                    fila_a = df_avg[df_avg["eventId"] == "333"]
+                    if not fila_a.empty:
+                        best_average = fila_a["best"].values[0] / 100.0
+
+                return best_single, best_average
+        except Exception:
+            pass
+        return None, None
+
+    def renderizar_grid_logros(best_sgl, best_avg, key_prefix=""):
+        cols = st.columns(5)
+        
+        for i, logro in enumerate(LOGROS_UNIFICADOS):
+            cumple_avg = best_avg is not None and best_avg < logro["req_avg"]
+            cumple_sgl = best_sgl is not None and best_sgl < logro["req_sgl"]
+            desbloqueado = cumple_avg and cumple_sgl
+
+            col = cols[i % 5]
+            
+            with col:
+                img_html = renderizar_imagen_logro_html(logro["archivo"], color=logro["color"], desbloqueado=desbloqueado)
+                
+                # Popover interactivo con la descripción del logro
+                with st.popover(f"🏅 {logro['mineral']}", use_container_width=True):
+                    st.markdown(f"### Mineral: {logro['mineral']}")
+                    st.write(f"**Nivel:** {logro['titulo']}")
+                    st.markdown("---")
+                    st.markdown("**Requisitos indispensables:**")
+                    st.write(f"• **Media:** Sub-{logro['req_avg']:.1f}s ({'✅' if cumple_avg else '❌'})".replace('.0s', 's'))
+                    st.write(f"• **Single:** Sub-{logro['req_sgl']:.1f}s ({'✅' if cumple_sgl else '❌'})".replace('.0s', 's'))
+                    st.markdown("---")
+                    st.markdown("**Tus marcas oficiales WCA:**")
+                    st.write(f"• **Media:** {f'{best_avg:.2f}s' if best_avg else 'Sin registro'}")
+                    st.write(f"• **Single:** {f'{best_sgl:.2f}s' if best_sgl else 'Sin registro'}")
+
+                st.markdown(img_html, unsafe_allow_html=True)
+                
+                color_txt = logro["color"] if desbloqueado else "#666670"
+                
+                st.markdown(
+                    f'<div style="text-align: center; margin-bottom: 25px;">'
+                    f'<div style="font-size: 14px; font-weight: 900; color: {color_txt};">{logro["mineral"]}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+
+    def procesar_logros_competidor(nombre_comp, wca_id_comp, key_prefix=""):
+        best_sgl, best_avg = obtener_marcas_oficiales_wca(wca_id_comp)
+        
+        completados = sum(
+            1 for l in LOGROS_UNIFICADOS 
+            if (best_avg is not None and best_avg < l["req_avg"]) and (best_sgl is not None and best_sgl < l["req_sgl"])
+        )
+        pct_global = completados / 10.0
+
+        st.subheader(f"Competidor: {nombre_comp}")
+
+        str_avg_oficial = f"{best_avg:.2f}s" if best_avg else "Sin Registro"
+        str_sgl_oficial = f"{best_sgl:.2f}s" if best_sgl else "Sin Registro"
+
+        banner_dorado = f"""
+        <div style="background: linear-gradient(135deg, rgba(255, 215, 0, 0.12) 0%, rgba(20, 20, 25, 0.95) 100%); border: 1.5px solid #FFD700; border-radius: 14px; padding: 18px 24px; margin-bottom: 20px; box-shadow: 0 0 18px rgba(255, 215, 0, 0.25); display: flex; align-items: center; justify-content: space-between;">
+            <div>
+                <div style="font-size: 14px; font-weight: 700; color: #E0E0E0; text-transform: uppercase; letter-spacing: 1px;">PROGRESO GENERAL DE LOGROS (3x3x3)</div>
+                <div style="font-size: 13px; color: #A0A0A0; margin-top: 4px;">Récord Oficial Media WCA: <b style="color: #FFD700;">{str_avg_oficial}</b> | Récord Oficial Single WCA: <b style="color: #FFD700;">{str_sgl_oficial}</b></div>
+                <div style="font-size: 12px; color: #777788; margin-top: 2px;">{completados} de 10 insignias completadas</div>
+            </div>
+            <div style="font-size: 46px; font-weight: 900; color: #FFD700; text-shadow: 0 0 12px rgba(255, 215, 0, 0.5); font-family: sans-serif;">
+                {pct_global:.0%}
+            </div>
+        </div>
+        """
+        st.markdown(banner_dorado, unsafe_allow_html=True)
+        st.progress(pct_global)
+        st.caption("📌 *Haz clic en el botón con el nombre de cada mineral para desplegar los detalles y requisitos de cada logro.*")
+        st.write("")
+
+        renderizar_grid_logros(best_sgl, best_avg, key_prefix=key_prefix)
+
+    if wca_id_2:
+        tab_logros1, tab_logros2 = st.tabs([f"👤 {nombre_1}", f"👤 {nombre_2}"])
+        with tab_logros1:
+            procesar_logros_competidor(nombre_1, wca_id_1, key_prefix="c1")
+        with tab_logros2:
+            procesar_logros_competidor(nombre_2, wca_id_2, key_prefix="c2")
+    else:
+        procesar_logros_competidor(nombre_1, wca_id_1, key_prefix="c1")
