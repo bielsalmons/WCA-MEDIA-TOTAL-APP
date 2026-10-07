@@ -5,3 +5,7 @@ streamlit
 openpyxl
 jinja2
 scipy
+matplotlib
+seaborn
+lxml
+html5lib
