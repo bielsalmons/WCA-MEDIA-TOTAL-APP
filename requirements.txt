@@ -2,3 +2,6 @@ altair
 pandas
 requests
 streamlit
+openpyxl
+jinja2
+scipy
